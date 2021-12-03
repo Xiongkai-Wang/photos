@@ -79,7 +79,7 @@
 
 - What? 主机数据更新后根据配置和策略，自动同步到备用机的 master/slaver 机制，**Master** 以写为主，**Slave** 以读为主
 
-  <img src="/Users/xiongkai/Desktop/应用.png" alt="应用" style="zoom:50%;" />
+  <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/redis-rdb.png" alt="应用" style="zoom:50%;" />
 
 - Why？ 读写分离，性能扩展（减轻主机负担，高并发场景）；容灾快速恢复。
 
