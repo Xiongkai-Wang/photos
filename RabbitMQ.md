@@ -54,7 +54,7 @@
 
     <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/mq-rabbitmq.png" style="zoom:33%;" />
 
-- Terminologies in RabbitMQ
+- Components in RabbitMQ
 
   - **Connection**: publisher/consumer 和 broker 之间的TCP连接
 
