@@ -215,6 +215,24 @@
 
 - **Work Queue工作队列**：用来将耗时的任务分发给多个消费者（工作者）。有了工作队列，我们就可以将具体的工作放到后面去做，将工作封装为一个消息，发送到队列中，一个工作进程就可以取出消息并完成工作。如果启动了多个工作进程，那么工作就可以在多个进程间共享。这个概念也即我们说的异步，在项目中，有时候一个简单的Web请求，后台要做一系统的操作，这时候，如果后台执行完成之后再给前台返回消息将会导致浏览器页面等待从而出现假死状态。因此，通常的做法是，在这个Http请求到后台，后台获取到正确的参数等信息后立即给前台返回一个成功标志，然后后台异步地进行后续的操作。<img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/mq-workqueue.png" style="zoom:50%;" />
 
+- 抽出channel生产过程到工具类
+
+  ```java
+  public class RabbitMqUtils {
+      // 得到一个连接的 channel
+      public static Channel getChannel() throws Exception{
+          // 创建一个连接工厂
+          ConnectionFactory factory = new ConnectionFactory();
+          factory.setHost("172.20.10.2");
+          factory.setUsername("admin");
+          factory.setPassword("password");
+          Connection connection = factory.newConnection();
+          Channel channel = connection.createChannel();
+          return channel;
+      }
+  }
+  ```
+
 - 生产者
 
   ```java
