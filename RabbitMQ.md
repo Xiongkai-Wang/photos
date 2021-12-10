@@ -54,7 +54,7 @@
 
     <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/mq-rabbitmq.png" style="zoom:33%;" />
 
-- Components in RabbitMQ
+- Terminologies in RabbitMQ
 
   - **Connection**: publisher/consumer 和 broker 之间的TCP连接
 
@@ -85,7 +85,7 @@
   yum install socat -y
   rpm -ivh rabbitmq-server-3.8.8-1.el7.noarch.rpm # -i install -vh 显示进度
   # docker
-  docker run -it --rm --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3.9-management
+  docker run -it --rm --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3.9-management # --rm关闭容器后直接删除容器
   ```
 
 - 常用命令
@@ -109,7 +109,154 @@
   rabbitmqctl start_app 
   ```
 
+
+
+
+### MQ Application -- Hello World
+
+- 最简单的情况，只有一个生产者和一个消费者。“ P”是我们的生产者，“ C”是我们的消费者。中间的框是一个队列-RabbitMQ 代表使用者保留的消息缓冲区。
+
+  <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/mq-hello.png" style="zoom:50%;" />
+
+- 引入java依赖：在创建的maven工程中pom文件中加入
+
+  ```xml
+  <dependencies>
+      <dependency>
+          <groupId>com.rabbitmq</groupId>
+          <artifactId>amqp-client</artifactId>
+          <version>5.8.0</version>
+      </dependency>
+      <dependency>
+          <groupId>commons-io</groupId>
+          <artifactId>commons-io</artifactId>
+          <version>2.6</version>
+      </dependency>
+  </dependencies>
+  ```
+
+- 生产者
+
+  ```java
+  public class Producer {
+      private final static String QUEUE_NAME = "hello";
+      public static void main(String[] args) throws Exception {
+          //创建一个连接工厂
+          ConnectionFactory factory = new ConnectionFactory();
+          factory.setHost("172.20.10.2");
+          factory.setUsername("admin");
+          factory.setPassword("password");
+          //channel 实现了自动 close 接口 自动关闭 不需要显示关闭
+          try(Connection connection = factory.newConnection();
+              Channel channel = connection.createChannel()) {
+              /**
+               * 声明一个队列
+               * 1.队列名称
+               * 2.队列里面的消息是否持久化，默认false消息存储在内存中
+               * 3.该队列是否只供一个消费者进行消费，是否进行共享 true表示可以多个消费者消费
+               * 4.是否自动删除 最后一个消费者端开连接以后 该队列是否自动删除 true 自动删除
+               * 5.其他参数
+               */
+              channel.queueDeclare(QUEUE_NAME,false,false,false,null);
+              String message="hello world";
+              /**
+               * 发送一个消息
+               * 1.发送到那个交换机,""表示默认
+               * 2.路由的 key 是哪个
+               * 3.其他的参数信息
+               * 4.发送消息的消息体，字节流
+               * */
+              channel.basicPublish("", QUEUE_NAME,null, message.getBytes());
+              System.out.println("message sent");
+          }
+      }
+  }
+  
+  ```
+
+- 消费者
+
+  ```java
+  public class Consumer {
+      private final static String QUEUE_NAME = "hello";
+  
+      public static void main(String[] args) throws Exception {
+          ConnectionFactory factory = new ConnectionFactory();
+          factory.setHost("172.20.10.2");
+          factory.setUsername("admin");
+          factory.setPassword("password");
+          Connection connection = factory.newConnection();
+          Channel channel = connection.createChannel();
+          System.out.println("等待接收消息....");
+          //推送的消息如何进行消费的接口回调
+          DeliverCallback deliverCallback = (consumerTag, delivery) -> {
+              String message= new String(delivery.getBody());
+              System.out.println(message);
+          };
+          //取消消费的一个回调接口 如在消费的时候队列被删除掉了
+          CancelCallback cancelCallback = (consumerTag) -> {
+              System.out.println("消息消费被中断");
+          };
+          /**
+           * 消费者消费消息
+           * 1.消费哪个队列
+           * 2.消费成功之后是否要自动应答 true 代表自动应答 false 手动应答
+           * 3.消费者未成功消费的回调
+           */
+          channel.basicConsume(QUEUE_NAME,true, deliverCallback, cancelCallback);
+      }
+  
+  }
+  ```
+
   
 
+### MQ Application -- Work Queue
 
+- **Work Queue工作队列**：用来将耗时的任务分发给多个消费者（工作者）。有了工作队列，我们就可以将具体的工作放到后面去做，将工作封装为一个消息，发送到队列中，一个工作进程就可以取出消息并完成工作。如果启动了多个工作进程，那么工作就可以在多个进程间共享。这个概念也即我们说的异步，在项目中，有时候一个简单的Web请求，后台要做一系统的操作，这时候，如果后台执行完成之后再给前台返回消息将会导致浏览器页面等待从而出现假死状态。因此，通常的做法是，在这个Http请求到后台，后台获取到正确的参数等信息后立即给前台返回一个成功标志，然后后台异步地进行后续的操作。
 
+- 生产者
+
+  ```java
+  public class Sender {
+      private static final String QUEUE_NAME="Work Queue";
+      public static void main(String[] args) throws Exception {
+          try(Channel channel = RabbitMqUtils.getChannel();) {
+              channel.queueDeclare(QUEUE_NAME,false,false,false,null);
+              //从控制台当中接受信息
+              Scanner scanner = new Scanner(System.in);
+              // 模拟不断发送消息
+              while (scanner.hasNext()){
+                  String message = scanner.next();
+                  channel.basicPublish("", QUEUE_NAME,null, message.getBytes());
+                  System.out.println("message sent: "+message);
+              }
+          }
+      }
+  }
+  ```
+
+- 消费者
+
+  ```java
+  public class Worker1 {
+      private static final String QUEUE_NAME="Work Queue";
+      public static void main(String[] args) throws Exception {
+          Channel channel = RabbitMqUtils.getChannel();
+          // 推送的消息如何进行消费的接口回调
+          DeliverCallback deliverCallback = (consumerTag, delivery) -> {
+              String receivedMessage = new String(delivery.getBody());
+              System.out.println("message received: " + receivedMessage);
+          };
+          // 取消消费的一个回调接口 如在消费的时候队列被删除掉了
+          CancelCallback cancelCallback = (consumerTag) -> {
+              System.out.println(consumerTag + " message consuming is stopped...");
+          };
+          
+        	System.out.println("Worker1 waiting for message......");
+          channel.basicConsume(QUEUE_NAME,true,deliverCallback,cancelCallback);
+      }
+  }
+  ```
+
+  
