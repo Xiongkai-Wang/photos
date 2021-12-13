@@ -162,11 +162,11 @@
               /**
                * 发送一个消息
                * 1.发送到那个交换机,""表示默认
-               * 2.路由的 key 是哪个
+               * 2.路由的key是哪个
                * 3.其他的参数信息
                * 4.发送消息的消息体，字节流
                * */
-              channel.basicPublish("", QUEUE_NAME,null, message.getBytes());
+              channel.basicPublish("", QUEUE_NAME, null, message.getBytes());
               System.out.println("message sent");
           }
       }
@@ -201,9 +201,9 @@
            * 消费者消费消息
            * 1.消费哪个队列
            * 2.消费成功之后是否要自动应答 true 代表自动应答 false 手动应答
-           * 3.消费者未成功消费的回调
+           * 3.消费者成功和未成功消费的回调
            */
-          channel.basicConsume(QUEUE_NAME,true, deliverCallback, cancelCallback);
+          channel.basicConsume(QUEUE_NAME, true, deliverCallback, cancelCallback);
       }
   
   }
@@ -278,3 +278,176 @@
   ```
 
   
+
+### 消息应答
+
+- **What?**  Message Acknowledgment 消费者在接收到消息并且处理该消息之后，告诉 rabbitmq 它已经处理了，rabbitmq 可以把该消息删除了。
+
+- **Why？**为了保证消息在发送过程中不丢失。没有消息应答，RabbitMQ 一旦向消费者传递了一条消息，便立即将该消 息标记为删除。但是消费者完成一个任务可能需要一段时间，如果其中一个消费者处理一个长的任务并仅只完成了部分突然它挂掉了，就会丢失正在处理的消息。
+
+- **应答方式**
+
+  - 自动应答：消息发送后立即被认为已经传送成功。这种模式仅适用在消费者可以高效并以某种速率能够处理这些消息的情况下使用
+
+  - 手动应答：在接收到消息并且处理该消息之后应答。
+
+    ```java
+    channel.basicAck(deliveryTag, true)
+    // deliveryTag:
+    // multiple: true 代表批量应答 channel 上未应答的消息, flase只会应答tag=8的消息 5,6,7 这三个消息依然不会被确认收到消息应答 (比如说channel上有传送消息 5,6,7,8)
+    ```
+
+- 消息自动重新入队：如果消费者由于某些原因失去连接(连接已关闭或 TCP 连接丢失)，导致消息未发送 ACK 确认，RabbitMQ 将了解到消息未完全处理，并将对其重新排队
+
+- 具体操作：
+
+  ```java
+  public class Worker {
+      private static final String QUEUE_NAME="Message Acknowledgment";
+      public static void main(String[] args) throws Exception {
+          Channel channel = RabbitMqUtils.getChannel();
+          // 推送的消息如何进行消费的接口回调
+          DeliverCallback deliverCallback = (consumerTag, delivery) -> {
+              String receivedMessage = new String(delivery.getBody());
+              System.out.println("message received: " + receivedMessage);
+            	// 手动应答
+            	channel.basicAck(delivery.getEnvelope().getDeliveryTag(), true)
+          };
+          // 取消消费的一个回调接口 如在消费的时候队列被删除掉了
+          CancelCallback cancelCallback = (consumerTag) -> {
+              System.out.println(consumerTag + " message consuming is stopped...");
+          };
+          
+        	System.out.println("Worker1 waiting for message......");
+        	boolean autoAck = false;
+          channel.basicConsume(QUEUE_NAME, autoAck, deliverCallback, cancelCallback);
+      }
+  }
+  ```
+
+  
+
+### 队列和消息持久化
+
+- **Why?**  消息应答是保证任务不丢失，而持久化是保障当 RabbitMQ 服务停掉以后消息生产者发送过来的消息不丢失。这需要队列和消息都标记为持久化
+
+- **队列持久化**：
+
+  ```java
+  // 1.队列名称 2.队列里面的消息是否持久化 3.该队列是否只供一个消费者进行消费 4.是否自动删除 5.其他参数
+  boolean durable = true;
+  channel.queueDeclare(QUEUE_NAME, durable, false, false, null);
+  ```
+
+- **消息持久化**：
+
+  ```java
+  String message = "hello";
+  // 1.交换机 2.路由key 3.消息持久化 4.message内容
+  channel.basicPublish("", QUEUE_NAME, MessageProperties.PERSISTENT_TEXT_PLAIN, message.getBytes());
+  ```
+
+- 消费者预取值: 定义（队列想消费者传输消息）通道上允许的未确认消息的最大数量
+
+  ```java
+  int prefetchCount = 4;
+  channel.basicQos(prefetchCount);
+  // 增加预取将提高向消费者传递消息的速度;但是已传递但尚未处理的消息的数量也会增加，增加了消费者内存消耗
+  ```
+
+  
+
+### 发布确认（Publisher Comfirms）
+
+- **What？**：生产者将信道设置成 confirm 模式，一旦信道进入 confirm 模式，所有在该信道上面发布的消息都将会被指派一个唯一的 ID，一旦消息被投递到所有匹配的队列之后，broker 就会发送一个包含ID的确认给生产者，这就使得生产者知道消息已经正确到达目的队列。
+
+- **单独发布消息**：发布一个消息之后只有它被确认发布，后续的消息才能继续发布。
+
+  ```java
+  private static final Integer MESSAGE_COUNT =  10;
+  public static void publishMessageIndividually() throws Exception { 
+    try (Channel channel = RabbitMqUtils.getChannel()) {
+      String queueName = UUID.randomUUID().toString(); 
+      channel.queueDeclare(queueName, false, false, false, null); 
+      //开启发布确认
+      channel.confirmSelect();
+      long begin = System.currentTimeMillis(); 
+      for (int i = 0; i < MESSAGE_COUNT; i++) {
+        String message = i + "";
+        channel.basicPublish("", queueName, null, message.getBytes()); 
+        //等待确认，服务端返回false或超时未返回，生产者可以消息重发
+        boolean flag = channel.waitForConfirms();
+        if(flag){
+          System.out.println("消息发送成功"); 
+        }
+      }
+      long end = System.currentTimeMillis();
+      System.out.println("发布" + MESSAGE_COUNT + "个单独确认消息,耗时" + (end - begin) +
+  "ms"); }
+  }
+  ```
+
+- **批量发布消息**: 发布一批消息然后一起确认，可以提高吞吐量
+
+  ```java
+  public static void publishMessageBatch() throws Exception { 
+    try (Channel channel = RabbitMqUtils.getChannel()) {
+      String queueName = UUID.randomUUID().toString(); 
+      channel.queueDeclare(queueName, false, false, false, null); 
+      channel.confirmSelect(); //开启发布确认
+      int batchSize = 100; // 批量大小
+      int outstandingMessageCount = 0; //未确认消息个数
+      long begin = System.currentTimeMillis(); 
+      for (int i = 0; i < MESSAGE_COUNT; i++) {
+        String message = i + "";
+        channel.basicPublish("", queueName, null, message.getBytes());
+        outstandingMessageCount++;
+        if (outstandingMessageCount == batchSize) {
+          channel.waitForConfirms();
+          outstandingMessageCount = 0;
+        }
+      }
+      long end = System.currentTimeMillis();
+      System.out.println("发布" + MESSAGE_COUNT + "个批量确认消息,耗时" + (end - begin) +
+  "ms"); 
+    }
+  }
+  ```
+
+- **异步发布消息**：利用回调函数来达到消息可靠性传递的，这个中间件也是通过函数回调来保证是否投递成功
+
+  ```java
+  public static void publishMessageAsync() throws Exception { 
+    try (Channel channel = RabbitMqUtils.getChannel()) {
+      String queueName = UUID.randomUUID().toString(); 
+      channel.queueDeclare(queueName, false, false, false, null); 
+      channel.confirmSelect();
+      
+      // 消息确认成功的回调函数 1.消息标记 2.是否为批量确认
+      ConfirmCallback ackCallback = (deliveryTag, multiple) -> { 
+        System.out.println("发布的消息已确认，序列号:"+deliveryTag); 
+      };
+      // 消息确认失败的回调函数
+      ConfirmCallback nackCallback = (deliveryTag, multiple) -> {
+        System.out.println("发布的消息未被确认，序列号:"+deliveryTag); 
+      };
+      //添加一个异步确认的监听器，监听哪些成功哪些失败: 1.确认收到消息的回调 2.未收到消息的回调
+      channel.addConfirmListener(ackCallback, nackCallback); 
+      
+      long begin = System.currentTimeMillis();
+      for (int i = 0; i < MESSAGE_COUNT; i++) {
+        String message = "msg" + i; 
+        channel.basicPublish("", queueName, null, message.getBytes()); 
+      }
+      long end = System.currentTimeMillis();
+      System.out.println("发布" + MESSAGE_COUNT + "个异步确认消息,耗时" + (end - begin) + "ms");
+    } 
+  }
+  ```
+
+- 比较: 
+
+  - 单独发布消息是同步等待确认，简单，但是吞吐量有限
+  - 批量发布消息也是同步等待确认，吞吐量提升，但是一旦出现问题很难推断出是哪一条
+  - 异步发布消息达到最佳性能和资源使用，在出现错误的情况下可以很好地控制，但是实现起来稍微难些
+
