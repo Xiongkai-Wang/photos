@@ -152,8 +152,8 @@
               /**
                * 声明一个队列
                * 1.队列名称
-               * 2.队列里面的消息是否持久化，默认false消息存储在内存中
-               * 3.该队列是否只供一个消费者进行消费，是否进行共享 true表示可以多个消费者消费
+               * 2.durable:队列里面的消息是否持久化，默认false消息存储在内存中
+               * 3.exclusive:是否排他.如果一个队列声明为排他队列，该队列对首次声明它的连接可见，并在连接断开时自动删除，
                * 4.是否自动删除 最后一个消费者端开连接以后 该队列是否自动删除 true 自动删除
                * 5.其他参数
                */
@@ -163,7 +163,7 @@
                * 发送一个消息
                * 1.发送到那个交换机,""表示默认
                * 2.路由的key是哪个
-               * 3.其他的参数信息
+               * 3.其他的参数信息,如消息持久化
                * 4.发送消息的消息体，字节流
                * */
               channel.basicPublish("", QUEUE_NAME, null, message.getBytes());
@@ -201,14 +201,15 @@
            * 消费者消费消息
            * 1.消费哪个队列
            * 2.消费成功之后是否要自动应答 true 代表自动应答 false 手动应答
-           * 3.消费者成功和未成功消费的回调
+           * 3.成功消费回调
+           * 4.未成功消费回调
            */
           channel.basicConsume(QUEUE_NAME, true, deliverCallback, cancelCallback);
       }
   
   }
   ```
-
+  
   
 
 ### MQ Application -- Work Queue
@@ -451,3 +452,352 @@
   - 批量发布消息也是同步等待确认，吞吐量提升，但是一旦出现问题很难推断出是哪一条
   - 异步发布消息达到最佳性能和资源使用，在出现错误的情况下可以很好地控制，但是实现起来稍微难些
 
+
+
+### 交换机 Exchange
+
+- **What？**RabbitMQ 中，生产者生产的消息从不会直接发送到队列，相反，生产者只能将消息发送到交换机，交换机工作的内容非常简单，一方面它接收来自生产者的消息，另一方面将它们推入队列。交换机必须确切知道如何处理收到的消息。是应该把这些消 息放到特定队列还是说把他们到许多队列中还是说应该丢弃它们。这就的由交换机的类型来决定。
+
+- **类别**：扇出(fanout)、直接(direct)、主题(topic)、标题(headers) 。空字符串表示默认或无名称交换机。
+
+  ```java
+  // review
+  //声明队列：1.队列名称 2.队列是否持久化 3.该队列是否排他 4.是否自动删除 5.其他参数
+  channel.queueDeclare(QUEUE_NAME,false,false,false,null);
+  //发送消息：1.发送到的交换机 2.路由key 3.其他参数信息(如发布的消息持久化) 4.消息体：字节流
+  channel.basicPublish("", routingKey, null, message.getBytes());
+  //消费消息：1.消费哪个队列 2.是否自动应答 3.消费成功的回调 4.消费未成功的回调 
+  channel.basicConsume(QUEUE_NAME, true, deliverCallback, cancelCallback);
+  ```
+
+- 绑定 Binding：是 exchange 和 queue 之间的桥梁，它告诉我们 exchange 和那个队列进行了绑定关系。
+- **Fanout**：类型非常简单，是将接收到的所有消息广播到它绑定的所有队列中。
+- **Direct**: Fanout 只能进行无意识的广播，Direct规定消息只去到它绑定的routingKey队列中去。
+- **Topics**: 在Direct的基础上进一步对routingKey做出规定，实现更加灵活的方式。
+
+
+
+### Publish/Subscribe
+
+- What? 简单的发布订阅模式，利用fanout交换机将接收到的所有消息广播到它绑定的所有队列中。
+
+  <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/mq-pub%3Asub.png" style="zoom:50%;" />
+
+- 生产者
+
+  ```java
+  public class EmitLog {
+      private static final String EXCHANGE_NAME = "logs";
+      public static void main(String[] args) throws Exception {
+          Channel channel = RabbitMqUtils.getChannel();
+        	 // 声明交换机，指定交换机类型
+          channel.exchangeDeclare(EXCHANGE_NAME, BuiltinExchangeType.FANOUT);
+          Scanner scanner = new Scanner(System.in);
+          System.out.println("Please input message...");
+          while (scanner.hasNext()) {
+              String message = scanner.nextLine();
+              channel.basicPublish(EXCHANGE_NAME, "", null, message.getBytes("UTF-8"));
+              System.out.println("Produced Message: " + message);
+          }
+      }
+  }
+  ```
+
+- 消费者1
+
+  ```java
+  public class ReceiveLog01 {
+      private static final String EXCHANGE_NAME = "logs";
+      public static void main(String[] args) throws Exception {
+          Channel channel = RabbitMqUtils.getChannel();
+          channel.exchangeDeclare(EXCHANGE_NAME, BuiltinExchangeType.FANOUT);
+          // 生成一个临时队列
+          String queue = channel.queueDeclare().getQueue();
+          // 绑定交换机与队列，routingKey为空字符串
+          channel.queueBind(queue, EXCHANGE_NAME, "");
+          System.out.println("Waiting for message...");
+          DeliverCallback deliverCallback = (consumerTag, delivery) -> {
+              String message = new String(delivery.getBody(), "UTF-8");
+            	// 写入磁盘
+              File file = new File("/Users/xiongkai/IdeaProjects/RabbitMQ/mq_info.txt");
+              FileUtils.writeStringToFile(file,message,"UTF-8");
+              System.out.println("write " + message + " into file successfully");
+          };
+          CancelCallback cancelCallback = consumerTag -> {};
+          channel.basicConsume(queue, true, deliverCallback, cancelCallback);
+      }
+  }
+  ```
+
+- 消费者2
+
+  ```java
+  DeliverCallback deliverCallback = (consumerTag, delivery) -> {
+      String message = new String(delivery.getBody(), "UTF-8");
+      System.out.println("print message: " + message);
+  };
+  ```
+
+  
+
+  
+
+### Routing
+
+- What? 路由模式，选择性地接收消息。利用direct交换机实现消息只发送到它绑定的 routingKey 队列中去。
+
+  <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/mq-routing.png" style="zoom:50%;" />
+
+- 生产者
+
+  ```java
+  public class EmitLogDirect {
+      private static final String EXCHANGE_NAME = "direct_logs";
+      public static void main(String[] args) throws Exception {
+          Channel channel = RabbitMqUtils.getChannel();
+          channel.exchangeDeclare(EXCHANGE_NAME, BuiltinExchangeType.DIRECT);
+          Map<String, String> routingKey = new HashMap<>();
+          routingKey.put("info", "normal information");
+          routingKey.put("warning", "warning information");
+          routingKey.put("error", "error information");
+          routingKey.put("debug", "debug information");
+  
+          for (Map.Entry<String, String> entry: routingKey.entrySet()) {
+              String key = entry.getKey();
+              String message = entry.getValue();
+              channel.basicPublish(EXCHANGE_NAME, key, null, message.getBytes(StandardCharsets.UTF_8));
+              System.out.println("Produced Message: " + message);
+          }
+      }
+  }
+  ```
+
+- 消费者1
+
+  ```java
+  public class ReceiveLogDirect01 {
+      private static final String EXCHANGE_NAME = "direct_logs";
+      public static void main(String[] args) throws Exception {
+          Channel channel = RabbitMqUtils.getChannel();
+          channel.exchangeDeclare(EXCHANGE_NAME, BuiltinExchangeType.DIRECT);
+          String queue = "directQueue01";
+          channel.queueDeclare(queue, false, false, false, null);
+          // 绑定指定的routingKey
+          channel.queueBind(queue, EXCHANGE_NAME, "error");
+          System.out.println("Waiting for message....");
+          DeliverCallback deliverCallback = (consumerTag, delivery) -> {
+              String message = new String(delivery.getBody(), "UTF-8");
+              message = message + "binding key: " + delivery.getEnvelope().getRoutingKey();
+              // 将error信息写到磁盘
+              File file = new File("/Users/xiongkai/IdeaProjects/RabbitMQ/error_info.txt");
+              FileUtils.writeStringToFile(file,message,"UTF-8");
+              System.out.println("write error into file successfully");
+          };
+          CancelCallback cancelCallback = consumerTag -> {};
+          channel.basicConsume(queue, true, deliverCallback, cancelCallback);
+      }
+  }
+  ```
+
+- 消费者2
+
+  ```java
+  String queue = "directQueue02";
+  // 绑定多个指定的routingKey
+  channel.queueBind(queue, EXCHANGE_NAME, "info");
+  channel.queueBind(queue, EXCHANGE_NAME, "warning");
+  ```
+
+  
+
+### Topics
+
+- **What？**发送到类型是 topic 交换机的消息的 routingKey 不能随意写，必须满足一定的要求，它必须是一个单词列表，以点号分隔开。*可以代替一个单词，#可以替代零个或多个单词。
+
+  <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/mq-topics.png" style="zoom:50%;" />
+
+- Examples:
+
+  >Queue1: 
+  >
+  >​	 	\*.orange.\* 中间带 orange 带 3 个单词的字符串 
+  >
+  >Queue2: 
+  >
+  >​		\*.\*.rabbit 最后一个单词是 rabbit 的 3 个单词;  
+  >
+  >​		lazy.#第一个单词是 lazy 的多个单词
+  >
+  >quick.orange.rabbit  被队列 Q1 Q2 接收到
+  >
+  >lazy.orange.elephant 被队列 Q1Q2 接收到
+  >
+  >quick.orange.fox 被队列 Q1 接收到
+  >
+  >lazy.brown.fox  被队列 Q2 接收到
+  >
+  >lazy.pink.rabbit 虽然满足两个绑定但只被队列 Q2 接收一次
+  >
+  >quick.brown.fox 不匹配任何绑定不会被任何队列接收到会被丢弃
+  >
+  >quick.orange.male.rabbit 是四个单词,不匹配任何绑定会被丢弃
+  >
+  >lazy.orange.male.rabbit  四个单词但匹配Q2
+
+- 生产者
+
+  ```java
+  public class EmitLogTopic {
+      private static final String EXCHANGE_NAME = "topic_logs";
+      public static void main(String[] args) throws Exception {
+          Channel channel = RabbitMqUtils.getChannel();
+          channel.exchangeDeclare(EXCHANGE_NAME, BuiltinExchangeType.TOPIC);
+          Map<String, String> routingKey = new HashMap<>();
+          routingKey.put("quick.orange.rabbit", " 队列 Q1Q2 接收到");
+          routingKey.put("lazy.orange.elephant", " 队列 Q1Q2 接收到");
+          routingKey.put("quick.orange.fox", "队列 Q1 接收到");
+          routingKey.put("lazy.brown.fox", " 队列 Q2 接收到");
+          routingKey.put("quick.brown.fox", " 不匹配任何绑定不会被任何队列接收到会被丢弃");
+          routingKey.put("lazy.orange.male.rabbit", " 四个单词 匹配Q2");
+          routingKey.put("quick.orange.male.rabbit", " 四个单词不匹配任何绑定会被丢弃");
+        
+          for (Map.Entry<String, String> entry: routingKey.entrySet()) {
+              String key = entry.getKey();
+              String message = entry.getValue();
+              channel.basicPublish(EXCHANGE_NAME, key, null, message.getBytes(StandardCharsets.UTF_8));
+              System.out.println("Produced Message: " + message);
+          }
+      }
+  }
+  ```
+
+- 消费者1
+
+  ```java
+  public class ReceiveLogTopic01 {
+      private static final String EXCHANGE_NAME = "topic_logs";
+      public static void main(String[] args) throws Exception {
+          Channel channel = RabbitMqUtils.getChannel();
+          channel.exchangeDeclare(EXCHANGE_NAME, BuiltinExchangeType.TOPIC);
+          String queue = "topicQueue01";
+          channel.queueDeclare(queue, false, false, false, null);
+          // 绑定指定topic的routingKey
+          channel.queueBind(queue, EXCHANGE_NAME, "*.orange.*");
+          System.out.println("Waiting for message....");
+          DeliverCallback deliverCallback = (consumerTag, delivery) -> {
+              String message = new String(delivery.getBody(), "UTF-8");
+              System.out.println(queue + message + " binding key: " + delivery.getEnvelope().getRoutingKey());
+          };
+          CancelCallback cancelCallback = consumerTag -> {};
+          channel.basicConsume(queue, true, deliverCallback, cancelCallback);
+      }
+  }
+  ```
+
+- 消费者2
+
+  ```java
+  String queue = "topicQueue02";
+  // 绑定指定topic的routingKey
+  channel.queueBind(queue, EXCHANGE_NAME, "*.*.rabbit");
+  channel.queueBind(queue, EXCHANGE_NAME, "lazy.#");      
+  ```
+
+  
+
+
+
+### 死信队列
+
+- **What？**  死信Dead Letter，顾名思义就是无法被消费的消息。某些时候由于特定的原因导致queue中的某些消息无法被消费，这样的消息如果没有后续的处理，就变成了死信，死信队列就是接收这样的消息。
+
+  <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/mq-deadLetter.png" style="zoom:33%;" />
+
+- **死信来源**：消息TTL（Time To Live）过期；队列达到最大长度；消息被拒绝并且requeue=false
+
+- 生产者：
+
+  ```java
+  public class Producer {
+      private static final String NORMAL_EXCHANGE = "normal_exchange";
+      public static void main(String[] args) throws Exception {
+          Channel channel = RabbitMqUtils.getChannel();
+          channel.exchangeDeclare(NORMAL_EXCHANGE, BuiltinExchangeType.DIRECT);
+          for (int i = 1; i < 11; i++) {
+              String message = "message" + i;
+              channel.basicPublish(NORMAL_EXCHANGE, "normal", null, message.getBytes(StandardCharsets.UTF_8));
+              System.out.println("Produced " + message);
+          }
+      }
+  }
+  ```
+
+- 普通消费者：
+
+  ```java
+  public class NormalConsumer {
+      //普通交换机名称
+      private static final String NORMAL_EXCHANGE = "normal_exchange";
+      //死信交换机名称
+      private static final String DEAD_EXCHANGE = "dead_exchange";
+  
+      public static void main(String[] args) throws Exception {
+          Channel channel = RabbitMqUtils.getChannel();
+          //声明死信和普通交换机 类型为 direct
+          channel.exchangeDeclare(NORMAL_EXCHANGE, BuiltinExchangeType.DIRECT);
+          channel.exchangeDeclare(DEAD_EXCHANGE, BuiltinExchangeType.DIRECT);
+  
+          //声明死信队列
+          String deadQueue = "deadQueue";
+          channel.queueDeclare(deadQueue, false, false, false, null);
+          channel.queueBind(deadQueue, DEAD_EXCHANGE, "dead"); //死信队列绑定死信交换机
+  
+          //正常队列绑定死信队列信息
+          Map<String, Object> params = new HashMap<>();
+          params.put("x-dead-letter-exchange", DEAD_EXCHANGE); //正常队列设置死信交换机 参数固定
+          params.put("x-dead-letter-routing-key", "dead"); //正常队列设置死信routingKey 参数固定
+          String normalQueue = "normalQueue";
+          channel.queueDeclare(normalQueue, false, false, false, params);
+          channel.queueBind(normalQueue, NORMAL_EXCHANGE, "normal");
+  
+          System.out.println("waiting for messages.....");
+          DeliverCallback deliverCallback = (consumerTag, delivery) -> {
+              String message = new String(delivery.getBody(), "UTF-8");
+              // 模拟普通消费者拒绝消费某个信息，从而让死信消费者消费
+              if ("message5".equals(message)) {
+                  System.out.println("Normal Consumer received " + message + " but refused");
+                  channel.basicReject(delivery.getEnvelope().getDeliveryTag(), false);
+              } else {
+                  System.out.println("Normal Consumer receive message: " + message);
+              }
+          };
+          CancelCallback cancelCallback = consumerTag -> {};
+          channel.basicConsume(normalQueue, false, deliverCallback,cancelCallback);
+      }
+  }
+  ```
+
+- 死信消费者：
+
+  ```java
+  public class DeadLetterConsumer {
+      //死信交换机名称
+      private static final String DEAD_EXCHANGE = "dead_exchange";
+      public static void main(String[] args) throws Exception {
+          Channel channel = RabbitMqUtils.getChannel();
+          channel.exchangeDeclare(DEAD_EXCHANGE, BuiltinExchangeType.DIRECT);
+          String deadQueue = "deadQueue";
+          channel.queueDeclare(deadQueue, false, false, false, null);
+          channel.queueBind(deadQueue, DEAD_EXCHANGE, "dead");
+          System.out.println("waiting for messages.....");
+          DeliverCallback deliverCallback = (consumerTag, delivery) -> {
+              String message = new String(delivery.getBody(), "UTF-8");
+              System.out.println("Dead Consumer receive dead letter: " + message);
+          };
+          CancelCallback cancelCallback = consumerTag -> {};
+          channel.basicConsume(deadQueue, true, deliverCallback, cancelCallback);
+      }
+  }
+  ```
+
+  
