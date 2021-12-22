@@ -24,11 +24,11 @@
 
   - **命名服务**：在分布式系统中，通过使用命名服务，客户端应用能够根据指定名字来获取资源或服务的地址、提供者等信息。比如说一些分布式服务框架中的服务地址列表。通过调用 Zookeeper 提供的创建节点的 API，能够很容易创建一个全局唯一的 path，这个 path 就可以作为一个名称。
 
-    <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/zookeeper-namingService.png"  style="zoom:50%;" />
+    <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/zookeeper-namingService.png"  style="zoom:33%;" />
 
   - **统一配置管理**：发布者将数据发布到 Zookeeper节点上，供订阅者动态获取数据，实现配置信息的集中式管理和动态更新。可将配置信息写入ZooKeeper上的一个Znode。各个客户端服务器监听这个Znode。一旦Znode中的数据被修改，ZooKeeper将通知各个客户端服务器。
 
-    <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/zookeeper-configCenter.png" style="zoom: 33%;" />
+    <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/zookeeper-configCenter.png" style="zoom:25%;" />
 
   - **分布式锁**：根据Zookeeper有序临时节点的特性，每个进程对应连接一个有序临时节点（进程1对应节点/znode/00000001）。每个进程监听对应的上一个节点的变化。编号最小的节点对应的进程获得锁，可以操作资源。当进程1完成业务后，删除对应的子节点00000001，释放锁。
 
