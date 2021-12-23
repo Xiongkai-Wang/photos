@@ -177,6 +177,7 @@
 ### 数据模型
 
 - **What?** ZooKeeper 的数据模型，在结构上和标准文件系统的非常相似，拥有一个层 次的命名空间，都是采用树形层次结构，ZooKeeper 树中的每个节点被称为Znode
+
   <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/zookeeper-nodes.png" style="zoom:70%;" />
 
 - **节点类型**：节点的类型在创建时即被确定，并且不能改变
