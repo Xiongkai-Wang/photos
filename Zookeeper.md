@@ -125,7 +125,7 @@
   ```shell
   create -e /tmp001 firstNode 
   create [-s] [-e] path data acl
-  # -s或-e 分别指定节点特性:顺序或临时节点。默认为临时节点
+  # -s或-e 分别指定节点特性:顺序或临时节点。默认为永久节点
   # acl 用来进行权限控制
   ```
 
@@ -153,13 +153,13 @@
 
   ```shell
   delete path  # 若存在子节点，那么无法删除该节点，需要先删除子节点
-  deleteAll path # 清空，可以递归删除节点
+  deleteall path # 清空，可以递归删除节点
   ```
 
 - quota 对节点增加限制
 
   ```shell
-  setquota -n |-b val path # 对节点增加限制
+  setquota -n|-b val path # 对节点增加限制
   # n:表示子节点的最大个数,b:表示数据值的最大长度,val:子节点最大个数或数据值的最大长度
   listquota path # 列出指定节点的 quota
   delquota [-n|-b] path # 删除指定节点的quota
@@ -266,6 +266,216 @@
   
   WatchedEvent state:SyncConnected type:NodeDataChanged path:/tmp002
   ```
+
+  
+
+### Java API
+
+- **What？** Zookeeper的Java API主要包括两个类
+
+  - `org.apache.zookeeper.Zookeeper`  客户端主类，负责建立与zookeeper集群的会话， 并提供方法进行操作。
+  - `org.apache.zookeeper.Watcher` 监听器接口，其定义了事件通知相关的逻辑， 包含 KeeperState 和 EventType 两个枚举类，分别代表了通知状态和事件类型， 同时定义了事件的回调方法:`process(WatchedEvent event)`
+
+- 引入依赖
+
+  ```xml
+  <dependency>
+      <groupId>org.apache.zookeeper</groupId>
+      <artifactId>zookeeper</artifactId>
+      <version>3.5.7</version>
+  </dependency>
+  ```
+
+- 基本使用
+
+  ```java
+  public class TestZK {
+      @Test
+      public void testZk() throws Exception{
+          String connection = "localhost:2181,localhost:2182,localhost:2183";
+          Integer sessionTimeout = 20000;
+          // 创建客户端对象，连接 zookeeper 服务器
+          ZooKeeper zkClient = new ZooKeeper(connection, sessionTimeout, new Watcher() {
+            	@Override
+              public void process(WatchedEvent watchedEvent) {
+                  System.out.println("通知状态: " + watchedEvent.getState());
+                  System.out.println("通知类型: " + watchedEvent.getType());
+                  System.out.println("节点路径: " + watchedEvent.getPath());
+              }
+          });
+  
+          // 查看根节点的子节点, 相当于ls
+          System.out.println("-------------");
+          System.out.println("根节点的子节点：" + zkClient.getChildren("/", false)); 
+          if (zkClient.exists("/java", false) != null) { // 不存在返回null，存在则返回节点属性信息
+              zkClient.delete("/java", -1); // version=-1表示可以match任何version
+          }
+  
+          // 创建节点: 路径，数据，acl权限控制列表，节点类型
+          zkClient.create("/java", "java".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+  
+          // 创建子节点
+          zkClient.create("/java/child01", "child01".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+          zkClient.create("/java/child02", "child02".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+  
+          // 取出子节点列表, false表示不监听
+          System.out.println("java节点的子节点：" + zkClient.getChildren("/java", false));
+  
+          // 查看节点数据并监听： 路径，是否watch，stat节点状态(null表示不输出节点属性信息)
+          System.out.println("/java节点的数据为：" + new String(zkClient.getData("/java", true, null)));
+  
+          // 设置节点数据, version=-1表示可以match任何version
+          System.out.println("************");
+          zkClient.setData("/java", "new java".getBytes(), -1);
+  
+          // 关闭客户端
+          System.out.println("============");
+          zkClient.close();
+      }
+  }
+  ```
+
+  
+
+### 分布式锁java实现
+
+- **What？**比如说"进程 1"在使用该资源的时候，会先去获得锁，"进程 1"获得锁以后会对该资源保持独占，这样其他进程就无法访问该资源，"进程 1"用完该资源以后就将锁释放掉，让其他进程来获得锁，那么通过这个锁机制，我们就能保证了分布式系统中多个进程能够有序的 访问该临界资源。那么我们把这个分布式环境下的这个锁叫作分布式锁。
+
+- **Zookeeper实现分布式锁**
+
+  <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/zookeeper-lock.png" style="zoom:50%;" />
+
+```java
+public class TestLock {
+    public static void main(String[] args) throws Exception{
+        final DistributedLock lock1 = new DistributedLock();
+        final DistributedLock lock2 = new DistributedLock();
+        // 构造两个线程模拟分别用不同的客户端访问同一个资源
+        Thread thread1 = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    lock1.lock();
+                    System.out.println("Thread1 got lock");
+                    Thread.sleep(1000); // 模拟业务处理
+                    lock1.unlock();
+                    System.out.println("Thread1 released lock");
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+        Thread thread2 = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    lock2.lock();
+                    System.out.println("Thread2 got lock");
+                    Thread.sleep(1000);
+                    lock2.unlock();
+                    System.out.println("Thread2 released lock");
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+        thread1.start();
+        thread2.start();
+    }
+}
+```
+
+```java
+public class DistributedLock {
+    private String connection = "localhost:2181,localhost:2182,localhost:2183";
+    private Integer sessionTimeout = 20000;
+    private ZooKeeper zk;
+    private String rootNode = "locks";
+    private String subNode = "seq";
+    private String waitPath; // 监听的节点路径，即排序前一位的节点
+		private String currentNode;  // 当前节点路径，即该客户端代表的访问请求
+    private CountDownLatch connectLatch = new CountDownLatch(1);
+    private CountDownLatch waitLatch = new CountDownLatch(1); 
+    
+    public DistributedLock() throws IOException, InterruptedException, KeeperException {
+         // 连接zookeeper
+         zk = new ZooKeeper(connection, sessionTimeout, new Watcher() {
+            @Override
+            public void process(WatchedEvent event) {
+                // 连接建立时, 打开 latch, 唤醒 wait 在该 latch 上的线程
+                if (event.getState() == Event.KeeperState.SyncConnected) {
+                    connectLatch.countDown();
+                }
+                //  发生了节点删除事件，如果是waitPath（即释放锁的是该节点监视的节点），则可以唤醒waitLatch的线程了
+                if (event.getType() == Event.EventType.NodeDeleted &&
+                        event.getPath().equals(waitPath)) {
+                    waitLatch.countDown();
+                }
+            }
+        });
+        // 等待连接建立
+        connectLatch.await(); // 当countDown到0时，就会结束等待
+        // 如果是第一个到达的客户端，需要创建/lock根节点
+        Stat stat = zk.exists('/' + rootNode, false);
+        if (stat == null) {
+            System.out.println("lock根节点不存在");
+            zk.create("/" + rootNode, "lock".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+        }
+    }
+
+    public void lock() {
+        try {
+            // 当该客户端连接到服务器，在根节点下创建临时顺序节点，返回值为创建的节点路径
+            currentNode = zk.create("/" + rootNode + "/" + subNode, null,
+                    ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
+            Thread.sleep(10);
+            // 获取root节点下所有排队的节点
+            List<String> childrenNodes = zk.getChildren("/" + rootNode, false);
+            if (childrenNodes.size() == 1){
+                // 列表中只有一个子节点, 该client获得锁
+                return;
+            } else {
+                //对根节点下的所有临时顺序节点进行从小到大排序
+                Collections.sort(childrenNodes);
+                //当前节点名称
+                String thisNode = currentNode.substring(("/" + rootNode + "/").length());
+                //获取当前节点的位置
+                int index = childrenNodes.indexOf(thisNode);
+
+                if (index == -1) {
+                    System.out.println("Exception");
+                } else if (index == 0) {
+                    // 排名最前，可以获得锁
+                    return;
+                } else {
+                    // 获得排名比currentNode前 1 位的节点，并监视该节点
+                    this.waitPath = "/" + rootNode + "/" + childrenNodes.get(index - 1);
+                    zk.getData(waitPath, true, new Stat());   
+                    // 进入等待状态
+                    waitLatch.await(); // 当countDown到0时，就会结束等待
+                    return;
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void unlock() {
+        try {
+            zk.delete(currentNode, -1);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
+```
+
+- **CountDownLatch**:  Java并发编程中的常用类。CountDownLatch主要有两个方法：countDown()和await()。countDown()方法用于使计数器减一，其一般是执行任务的线程调用，await()方法则使调用该方法的当前线程处于等待状态，其一般是主线程调用。构造CountDownLatch时传入一个整数n，在这个整数“倒数”到0之前，主线程需要等待在门口，而这个“倒数”过程则是由各个执行线程驱动的，每个线程执行完一个任务“倒数”一次。总的来说，CountDownLatch的作用就是等待其他的线程都执行完任务，然后主线程才继续往下执行。
+
+  
+
+  
 
   
 
