@@ -381,7 +381,6 @@
   #sendMessageThreadPoolNums=128
   #拉消息线程池数量
   #pullMessageThreadPoolNums=128
-  filterServerNums=1
   ```
 
   
@@ -448,6 +447,8 @@
 ### 过滤消息
 
 - What? 在大多数情况下，TAG是一个简单而有用的设计，其可以来选择您想要的消息。但是限制是一个消息只能有一个标签，这对于复杂的场景可能不起作用。在这种情况下，可以使用SQL表达式筛选消息。SQL特性可以通过发送消息时的属性来进行计算。
+
+- 需要在broker配置文件中 `enablePropertyFilter=true`
 
 - 基本语法：RocketMQ只定义了一些基本语法来支持这个特性。你也可以很容易地扩展它。
 
