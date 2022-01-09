@@ -280,9 +280,412 @@
 
   
 
+### 集群搭建
 
+- **单Master模式**：这是最简单但也是最危险的模式，一旦broker服务器重启或宕机，整个服务将不可用。 只建议在本地测试和开发可以选择这种模式。 
 
+- **多master模式**：该模式是指所有节点都是master主节点（比如2个或3个主节点），没有slave从节点的模式。 
 
+  - 配置简单，性能高；一个master节点的宕机或者重启（维护）对应用程序没有影响；当磁盘配置为RAID10时，消息不会丢失，因为RAID10磁盘非常可靠，即使机器不可恢复；、
+  - 单台机器宕机时，本机未消费的消息，直到机器恢复后才会订阅，影响消息实时性
 
+- **多Master多Slave模式-异步复制**：每个主节点配置多个从节点，多对主从。HA采用异步复制，主节点和从节点之间有短消息延迟（毫秒）
 
+  - 即使磁盘损坏，也不会丢失极少的消息，不影响消息的实时性能；当主节点宕机时，消费者仍然可以消费从节点的消息，这个过程对应用本身是透明的，不需要人为干预；性能几乎与多Master模式一样高
+  - 主节点宕机、磁盘损坏时，会丢失少量消息
 
+- **多Master多Slave模式-同步双写**:每个master节点配置多个slave节点，有多对Master-Slave。HA采用同步双写，即只有消息成功写入到主节点并复制到多个从节点，才会返回成功响应给应用程序
+
+  - 数据和服务都没有单点故障；在master节点关闭的情况下，消息也没有延迟；服务可用性和数据可用性非常高
+  - 这种模式下的性能略低于异步复制模式（大约低 10%）；发送单条消息的RT略高，目前版本，master节点宕机后，slave节点无法自动切换到master
+
+- **搭建多Master多Slave模式-同步双写的集群**：以两个master broker、每个master一个slave为例
+
+  ```shell
+  ## cd ./rocketmq-all-4.9.2/distribution/target/rocketmq-4.9.2/rocketmq-4.9.2
+  ### 先启动nameServer 在不同的主机上都要启动
+  $ nohup sh bin/mqnamesrv &
+  
+  ### 启动多个broker
+  # 假设在A机器上启动第一个Master，NameServer的IP和端口
+  $ nohup sh bin/mqbroker -n localhost:9876 -c ./conf/2m-2s-sync/broker-a.properties &
+   
+  # 假设在B机器上启动第二个Master，NameServer的IP和端口
+  $ nohup sh bin/mqbroker -n localhost:9876 -c ./conf/2m-2s-sync/broker-b.properties &
+   
+  # 假设在C机器上启动第一个Slave，NameServer的IP和端口
+  $ nohup sh bin/mqbroker -n localhost:9876 -c ./conf/2m-2s-sync/broker-a-s.properties &
+   
+  # 假设在D机启动第二个Slave，NameServer的IP和端口
+  $ nohup sh bin/mqbroker -n localhost:9876 -c ./conf/2m-2s-sync/broker-b-s.properties &
+  
+  # 通过mqadmin命令查看集群
+  ./bin/mqadmin clusterList
+  ```
+
+  ```shell
+  # broker-.properties配置文件详解
+  # Master和Slave是通过指定相同的config命名“brokerName”来配对的，master节点的brokerId必须为0，slave节点的brokerId必须大于0。
+  #所属集群名字
+  brokerClusterName=rocketmq-cluster
+  #broker名字，注意此处不同的配置文件填写的不一样
+  brokerName=broker-a #### broker-a  broker-b  broker-b 
+  #0 表示 Master，>0 表示 Slave
+  brokerId=0  #### 1 0 1
+  #nameServer地址，分号分割
+  namesrvAddr=localhost:9876
+  #在发送消息时，自动创建服务器不存在的topic，默认创建的队列数
+  defaultTopicQueueNums=4
+  #是否允许 Broker 自动创建Topic，建议线下开启，线上关闭
+  autoCreateTopicEnable=true
+  #是否允许 Broker 自动创建订阅组，建议线下开启，线上关闭
+  autoCreateSubscriptionGroup=true
+  #Broker 对外服务的监听端口
+  listenPort=10911 # 10912  10913  10914
+  #删除文件时间点，默认凌晨 4点
+  deleteWhen=04
+  #文件保留时间，默认 48 小时
+  fileReservedTime=120
+  #commitLog每个文件的大小默认1G
+  mapedFileSizeCommitLog=1073741824
+  #ConsumeQueue每个文件默认存30W条，根据业务情况调整
+  mapedFileSizeConsumeQueue=300000
+  #destroyMapedFileIntervalForcibly=120000
+  #redeleteHangedFileInterval=120000
+  #检测物理文件磁盘空间
+  diskMaxUsedSpaceRatio=88
+  #存储路径
+  storePathRootDir=/Users/xiongkai/rocketmq/rocketmq-all-4.9.2/store
+  #commitLog 存储路径
+  storePathCommitLog=/Users/xiongkai/rocketmq/rocketmq-all-4.9.2/store/commitlog
+  #消费队列存储路径
+  storePathConsumeQueue=/Users/xiongkai/rocketmq/rocketmq-all-4.9.2/store/consumequeue
+  #消息索引存储路径
+  storePathIndex=/Users/xiongkai/rocketmq/rocketmq-all-4.9.2/store/index
+  # checkpoint文件存储路径
+  storeCheckpoint=/Users/xiongkai/rocketmq/rocketmq-all-4.9.2/store/checkpoint
+  # abort文件存储路径
+  abortFile=/Users/xiongkai/rocketmq/rocketmq-all-4.9.2/store/abort
+  #限制的消息大小
+  maxMessageSize=65536
+  #flushCommitLogLeastPages=4
+  #flushConsumeQueueLeastPages=2
+  #flushCommitLogThoroughInterval=10000
+  #flushConsumeQueueThoroughInterval=60000
+  #Broker的角色： ASYNC_MASTER 异步复制Master SYNC_MASTER 同步双写Master  SLAVE
+  brokerRole=SYNC_MASTER    #  SLAVE   SYNC_MASTER  SLAVE
+  #刷盘方式：ASYNC_FLUSH 异步刷盘  SYNC_FLUSH 同步刷盘
+  flushDiskType=SYNC_FLUSH
+  #checkTransactionMessageEnable=false
+  #发消息线程池数量
+  #sendMessageThreadPoolNums=128
+  #拉消息线程池数量
+  #pullMessageThreadPoolNums=128
+  filterServerNums=1
+  ```
+
+  
+
+### 延时消息
+
+- What? 延迟消息是指生产者发送消息发送消息后，不能立刻被消费者消费，需要等待指定的时间后才可以被消费。比如，用户下了一个订单之后，需要在指定时间内(例如15分钟)进行支付，如果时间到后还是未付款就取消订单释放库存。
+
+- 生产者
+
+  ```java
+  public class ScheduledMessageProducer {
+      public static void main(String[] args) throws Exception {
+          // 实例化一个生产者来产生延时消息
+          DefaultMQProducer producer = new DefaultMQProducer("Producer02");
+          producer.setNamesrvAddr("localhost:9876");
+          // 启动生产者
+          producer.start();
+          int totalMessagesToSend = 100;
+          for (int i = 0; i < totalMessagesToSend; i++) {
+              Message message = new Message("TestTopic02", ("Hello scheduled message " + i).getBytes());
+              // 设置延时等级3,这个消息将在10s之后发送(目前只支持固定的几个时间)
+              message.setDelayTimeLevel(3);
+              // 发送消息
+              producer.send(message);
+          }
+          // 关闭生产者
+          System.out.println("sent all message");
+          producer.shutdown();
+      }
+  }
+  ```
+
+- 消费者
+
+  ```java
+  public class ScheduledMessageConsumer {
+      public static void main(String[] args) throws Exception {
+          // 实例化消费者
+          DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("Consumer02");
+          consumer.setNamesrvAddr("localhost:9876");
+          // 订阅Topics
+          consumer.subscribe("TestTopic02", "*");
+          // 注册回调实现类来处理从broker拉取回来的消息
+          consumer.registerMessageListener(new MessageListenerConcurrently() {
+              @Override
+              public ConsumeConcurrentlyStatus consumeMessage(List<MessageExt> messages, ConsumeConcurrentlyContext context) {
+                  for (MessageExt message : messages) {
+                      // Print approximate delay time period
+                      System.out.println("Receive message[msgId=" + message.getMsgId() + "] " + (System.currentTimeMillis() - message.getBornTimestamp()) + "ms later");
+                  }
+                  return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
+              }
+          });
+          // 启动消费者
+          consumer.start();
+          System.out.println("consumer started \n");
+      }
+  }
+  ```
+
+  
+
+### 过滤消息
+
+- What? 在大多数情况下，TAG是一个简单而有用的设计，其可以来选择您想要的消息。但是限制是一个消息只能有一个标签，这对于复杂的场景可能不起作用。在这种情况下，可以使用SQL表达式筛选消息。SQL特性可以通过发送消息时的属性来进行计算。
+
+- 基本语法：RocketMQ只定义了一些基本语法来支持这个特性。你也可以很容易地扩展它。
+
+  ```shell
+  数值比较，比如：>，>=，<，<=，BETWEEN，=；
+  字符比较，比如：=，<>，IN；
+  IS NULL 或者 IS NOT NULL；
+  逻辑符号 AND，OR，NOT；
+  # 只有使用push模式的消费者才能用使用SQL92标准的sql语句，接口如下：
+  ```
+
+- 生产者：
+
+  ```java
+  public class filterProducer {
+      public static void main(String[] args) throws Exception{
+          DefaultMQProducer producer = new DefaultMQProducer("Producer03");
+          producer.setNamesrvAddr("localhost:9876");
+          producer.start();
+          for (int i = 0; i < 10; i++)  {
+              Message msg = new Message("TopicTest03",  "tag",
+                      ("Hello RocketMQ " + i + "  ").getBytes(RemotingHelper.DEFAULT_CHARSET)
+              );
+              // 设置一些属性
+              msg.putUserProperty("id", String.valueOf(i));
+              SendResult sendResult = producer.send(msg);
+              System.out.println(sendResult.getMessageQueue() + "," + String.valueOf(i));
+  
+          }
+          producer.shutdown();
+      }
+  }
+  ```
+
+- 消费者：
+
+  ```java
+  public class filterConsumer {
+      public static void main(String[] args) throws Exception {
+          // 实例化消费者
+          DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("Consumer03");
+          consumer.setNamesrvAddr("localhost:9876");
+          // 订阅Topic，以及Tag来过滤需要消费的消息
+          //consumer.subscribe("TopicTest03", MessageSelector.bySql("id between 0 and 3"));
+          consumer.subscribe("TopicTest03", MessageSelector.bySql("id > 1 and id < 6"));
+  
+          // 注册回调实现类来处理从broker拉取回来的消息
+          consumer.registerMessageListener(new MessageListenerConcurrently() {
+              @Override
+              public ConsumeConcurrentlyStatus consumeMessage(List<MessageExt> msgs, ConsumeConcurrentlyContext context) {
+                  for (MessageExt msg : msgs) {
+                      System.out.println("consumed："+ new String(msg.getBody()) + msg.getUserProperty("id"));
+                  }
+                  return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
+              }
+          });
+          // 启动消费者实例
+          consumer.start();
+          System.out.printf("Consumer Started.%n");
+      }
+  }
+  ```
+
+  
+
+### 顺序消息
+
+- What? 消息有序指的是可以按照消息的发送顺序来消费(FIFO)。RocketMQ既可以严格的保证消息有序，可以分为分区有序或者全局有序。顺序消费的原理: 在默认的情况下消息发送会采取轮询方式把消息发送到不同的queue(分区队列)；而消费消息的时候从多个queue上拉取消息，这种情况发送和消费是不能保证顺序。但是如果控制发送的顺序消息只依次发送到同一个queue中，消费的时候只从这个queue上依次拉取，则就保证了顺序。当发送和消费参与的queue只有一个，则是全局有序；如果多个queue参与，则为分区有序，即相对每个queue，消息都是有序的。
+
+- 在注册消费监听时，使用`new MessageListenerOrderly()` 来保证顺序消费
+
+- 下面用订单进行**分区有序**的示例。一个订单的顺序流程是：创建、付款、推送、完成。订单号相同的消息会被先后发送到同一个队列中，消费时，同一个OrderId获取到的肯定是同一个队列。
+
+- 生产者：需要保证订单号相同的消息在同一个队列
+
+  ```java
+  public class Producer {
+  
+      public static void main(String[] args) throws Exception {
+          DefaultMQProducer producer = new DefaultMQProducer("please_rename_unique_group_name");
+          producer.setNamesrvAddr("localhost:9876");
+          producer.start();
+          String[] tags = new String[]{"TagA", "TagC", "TagD"};
+  
+          // 订单列表
+          List<OrderStep> orderList = new Producer().buildOrders();
+  
+          Date date = new Date();
+          SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+          String dateStr = sdf.format(date);
+          for (int i = 0; i < 10; i++) {
+              // 给消息体加个时间前缀
+              String body = dateStr + " Hello RocketMQ " + orderList.get(i);
+              Message msg = new Message("Topic04", tags[i % tags.length], "KEY" + i, body.getBytes());
+  
+              SendResult sendResult = producer.send(msg, new MessageQueueSelector() { // 队列选择器
+                  @Override
+                  public MessageQueue select(List<MessageQueue> mqs, Message msg, Object arg) {
+                      Long id = (Long) arg;  // 根据订单id选择发送的queue
+                      long index = id % mqs.size();
+                      return mqs.get((int) index);
+                  }
+              }, orderList.get(i).getOrderId()); // 订单id的参数传给Object arg
+  
+              System.out.println(String.format("SendResult queueId:%d, body:%s",
+                      sendResult.getMessageQueue().getQueueId(),
+                      body));
+          }
+  
+          producer.shutdown();
+      }
+  
+      /*订单步骤类*/
+      private static class OrderStep {
+          private long orderId; // id
+          private String desc;  // description
+  
+          public long getOrderId() {
+              return orderId;
+          }
+  
+          public void setOrderId(long orderId) {
+              this.orderId = orderId;
+          }
+  
+          public String getDesc() {
+              return desc;
+          }
+  
+          public void setDesc(String desc) {
+              this.desc = desc;
+          }
+  
+          @Override
+          public String toString() {
+              return "OrderStep{" +
+                      "orderId=" + orderId +
+                      ", desc='" + desc + '\'' +
+                      '}';
+          }
+      }
+  
+      /* 随意生成模拟订单数据 */
+      private List<OrderStep> buildOrders() {
+        	// 
+          List<OrderStep> orderList = new ArrayList<OrderStep>();
+  
+          OrderStep orderDemo = new OrderStep();
+          orderDemo.setOrderId(20210109001L);
+          orderDemo.setDesc("创建");
+          orderList.add(orderDemo);
+  
+          orderDemo = new OrderStep();
+          orderDemo.setOrderId(20210109002L);
+          orderDemo.setDesc("创建");
+          orderList.add(orderDemo);
+  
+          orderDemo = new OrderStep();
+          orderDemo.setOrderId(20210109001L);
+          orderDemo.setDesc("付款");
+          orderList.add(orderDemo);
+  
+          orderDemo = new OrderStep();
+          orderDemo.setOrderId(20210109003L);
+          orderDemo.setDesc("创建");
+          orderList.add(orderDemo);
+  
+          orderDemo = new OrderStep();
+          orderDemo.setOrderId(20210109002L);
+          orderDemo.setDesc("付款");
+          orderList.add(orderDemo);
+  
+          orderDemo = new OrderStep();
+          orderDemo.setOrderId(20210109003L);
+          orderDemo.setDesc("付款");
+          orderList.add(orderDemo);
+  
+          orderDemo = new OrderStep();
+          orderDemo.setOrderId(20210109002L);
+          orderDemo.setDesc("完成");
+          orderList.add(orderDemo);
+  
+          orderDemo = new OrderStep();
+          orderDemo.setOrderId(20210109001L);
+          orderDemo.setDesc("推送");
+          orderList.add(orderDemo);
+  
+          orderDemo = new OrderStep();
+          orderDemo.setOrderId(20210109003L);
+          orderDemo.setDesc("完成");
+          orderList.add(orderDemo);
+  
+          orderDemo = new OrderStep();
+          orderDemo.setOrderId(20210109001L);
+          orderDemo.setDesc("完成");
+          orderList.add(orderDemo);
+  
+          return orderList;
+      }
+  }
+  ```
+
+  
+
+- 消费者：
+
+  ```java
+  public class ConsumerInOrder {
+  
+      public static void main(String[] args) throws Exception {
+          DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("please_rename_unique_group_name_3");
+          consumer.setNamesrvAddr("127.0.0.1:9876");
+          /* 设置Consumer第一次启动是从队列头部开始消费还是队列尾部开始消费  */
+          consumer.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_FIRST_OFFSET);
+          consumer.subscribe("Topic04", "TagA || TagC || TagD");
+          // 注册回调实现类来处理从broker拉取回来的消息
+          consumer.registerMessageListener(new MessageListenerOrderly() {
+              Random random = new Random();
+              @Override
+              public ConsumeOrderlyStatus consumeMessage(List<MessageExt> msgs, ConsumeOrderlyContext context) {
+                  context.setAutoCommit(true);
+                  for (MessageExt msg : msgs) {
+                      // 可以看到每个queue有唯一的consume线程来消费, 订单对每个queue(分区)有序
+                      System.out.println("consumeThread=" + Thread.currentThread().getName() + "queueId=" + msg.getQueueId() + ", content:" + new String(msg.getBody()));
+                  }
+                  try {
+                      //模拟业务逻辑处理
+                      TimeUnit.SECONDS.sleep(random.nextInt(10));
+                  } catch (Exception e) {
+                      e.printStackTrace();
+                  }
+                  return ConsumeOrderlyStatus.SUCCESS;
+              }
+          });
+          consumer.start();
+          System.out.println("Consumer Started.");
+      }
+  }
+  ```
+
+  
