@@ -518,7 +518,7 @@
 
 - What? 消息有序指的是可以按照消息的发送顺序来消费(FIFO)。RocketMQ既可以严格的保证消息有序，可以分为分区有序或者全局有序。顺序消费的原理: 在默认的情况下消息发送会采取轮询方式把消息发送到不同的queue(分区队列)；而消费消息的时候从多个queue上拉取消息，这种情况发送和消费是不能保证顺序。但是如果控制发送的顺序消息只依次发送到同一个queue中，消费的时候只从这个queue上依次拉取，则就保证了顺序。当发送和消费参与的queue只有一个，则是全局有序；如果多个queue参与，则为分区有序，即相对每个queue，消息都是有序的。
 
-- 在注册消费监听时，使用`new MessageListenerOrderly()` 来保证顺序消费
+- 在注册消费监听时，使用`new MessageListenerOrderly()` 来保证顺序消费
 
 - 下面用订单进行**分区有序**的示例。一个订单的顺序流程是：创建、付款、推送、完成。订单号相同的消息会被先后发送到同一个队列中，消费时，同一个OrderId获取到的肯定是同一个队列。
 
@@ -690,3 +690,114 @@
   ```
 
   
+
+
+
+### 事务消息
+
+- **What？** 它可以被认为是一个两阶段的提交消息实现，以确保分布式系统中的最终一致性。事务性消息保证了本地事务的执行和消息的发送能够以原子的方式进行。
+
+  <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/rocketmq-transaction01.png" style="zoom:50%;" />
+
+- RocketMQ中**事务消息的实现流程**：事务消息的大致方案主要分为两个流程：正常事务消息的发送及提交、事务消息的补偿流程。
+
+  <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/rocketmq-transaction.png" style="zoom:50%;" />
+
+  - **事务消息的三种状态**：
+    - TransactionStatus.**Commit**Transaction: 提交事务，它允许消费者消费此消息
+    - TransactionStatus.**Rollback**Transaction: 回滚事务，它代表该消息将被删除，不允许被消费
+    - TransactionStatus.**Unknown**: 中间状态，它代表需要检查消息队列来确定状态。
+  - **正常事务消息的发送及提交**：(1) 发送消息（half消息）。(2) 服务端响应消息写入结果。(3) 根据发送结果执行本地事务（如果写入失败，此时half消息对业务不可见，本地逻辑不执行）。(4) 根据本地事务状态执行Commit或者Rollback（Commit操作生成消息索引，消息对消费者可见）
+  - **事务消息的补偿流程**：(1) 对没有Commit/Rollback的事务消息（UNKNOWN状态的消息），从服务端发起一次回查 (2) Producer收到回查消息，检查回查消息对应的本地事务的状态 (3) 根据本地事务状态，重新Commit或者Rollback
+
+- **具体实现**：
+
+  - 创建事务的生产者：
+
+    ```java
+    public class Producer {
+        public static void main(String[] args) throws MQClientException, InterruptedException {
+            //创建事务监听器
+            TransactionListener transactionListener = new TransactionListenerImpl();
+            TransactionMQProducer producer = new TransactionMQProducer("MyGroup");
+            producer.setNamesrvAddr("localhost:9876");
+            //生产者设置监听器
+            producer.setTransactionListener(transactionListener);
+            //启动消息生产者
+            producer.start();
+            String[] tags = new String[]{"TagA", "TagB", "TagC"};
+            for (int i = 0; i < 3; i++) {
+                try {
+                    Message msg = new Message("TransactionTopic", tags[i % tags.length], "KEY" + i,
+                            ("Hello RocketMQ " + i).getBytes(RemotingHelper.DEFAULT_CHARSET));
+                    SendResult sendResult = producer.sendMessageInTransaction(msg, null);
+                    System.out.printf("%s%n", sendResult);
+                    TimeUnit.SECONDS.sleep(1);
+                } catch (MQClientException | UnsupportedEncodingException e) {
+                    e.printStackTrace();
+                }
+            }
+            producer.shutdown();
+        }
+    }
+    ```
+
+  - 实现事务的监听接口
+
+    ```java
+    public class TransactionListenerImpl implements TransactionListener {
+        @Override
+        public LocalTransactionState executeLocalTransaction(Message msg, Object arg) {
+            System.out.println("执行本地事务");
+            if (StringUtils.equals("TagA", msg.getTags())) {
+                return LocalTransactionState.COMMIT_MESSAGE;
+            } else if (StringUtils.equals("TagB", msg.getTags())) {
+                return LocalTransactionState.ROLLBACK_MESSAGE;
+            } else {
+                return LocalTransactionState.UNKNOW;
+            }
+        }
+    
+        @Override
+        public LocalTransactionState checkLocalTransaction(MessageExt msg) {
+            System.out.println("MQ检查消息Tag【"+msg.getTags()+"】的本地事务执行结果");
+            return LocalTransactionState.COMMIT_MESSAGE;
+        }
+    }
+    ```
+
+  - 消费者
+
+    ```java
+    public class TransactionConsumer {
+        public static void main(String[] args) throws MQClientException {
+            DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("MyGroup11");
+            consumer.setNamesrvAddr("localhost:9876");
+            consumer.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_FIRST_OFFSET);
+            consumer.subscribe("TransactionTopic", "*");
+            consumer.registerMessageListener(new MessageListenerOrderly() {
+                private Random random = new Random();
+                @Override
+                public ConsumeOrderlyStatus consumeMessage(List<MessageExt> msgs, ConsumeOrderlyContext context) {
+                    //设置自动提交
+                    context.setAutoCommit(true);
+                    for (MessageExt msg:msgs){
+                        System.out.println(msg+ " , content : "+ new String(msg.getBody()) + new String(msg.getTags()));
+                    }
+                    try {
+                        //模拟业务处理
+                        TimeUnit.SECONDS.sleep(random.nextInt(5));
+                    }catch (Exception e){
+                        e.printStackTrace();
+                        return  ConsumeOrderlyStatus.SUSPEND_CURRENT_QUEUE_A_MOMENT;
+                    }
+                    return ConsumeOrderlyStatus.SUCCESS;
+                }
+            });
+            consumer.start();
+            System.out.println("consumer started.");
+        }
+    }
+    ```
+
+    
