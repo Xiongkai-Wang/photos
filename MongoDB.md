@@ -115,7 +115,7 @@
 
   ```shell
   db.COLLECTION_NAME.insert(document) 
-  db.col.insert({title: 'MongoDB', 
+  db.mycol.insert({title: 'MongoDB', 
       description: 'MongoDB: Nosql Database',
       url: 'http://docs.mongoing.com',
       tags: ['mongodb', 'database', 'NoSQL'],
