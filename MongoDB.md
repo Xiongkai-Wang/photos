@@ -6,7 +6,7 @@
 
 - **What？**NoSQL (“Non  SQL” or “Not only SQL”) 数据库是在2000年代后期开发的，其重点是可伸缩性、快速查询、允许频繁更改应用程序，并使开发人员的编程更简单。
 
-  - 使用SQL(结构化查询语言)访问的**关系数据库**开发于20世纪70年代，其重点是减少数据复制，因为存储比开发人员的时间成本高得多。SQL数据库往往具有严格、复杂的表格模式，通常需要昂贵的垂直扩展。
+  - 使用SQL(结构化查询语言)访问的**关系数据库**开发于20世纪70年代，其重点是**减少数据复制**，因为存储比开发人员的时间成本高得多。SQL数据库往往具有严格、复杂的表格模式，通常需要昂贵的垂直扩展。
 
 - **NoSQL 与 SQL 的比较**
 
@@ -32,7 +32,7 @@
 
 
 
-### MangoDB简介
+### MongoDB简介
 
 - **What？**MongoDB是一个开源、高性能、无模式的文档型数据库，当初的设计就是用于简化开发和方便扩展，是NoSQL数据库产品中的一种。它支持的数据结构非常松散，是一种类似于JSON的格式叫BSON，所以它既可以存储比较复杂的数据类型，又相当的灵活。
 
@@ -60,7 +60,7 @@
 
 - MongoDB支持Linux、MacOS、Windows系统：https://docs.mongoing.com/install-mongodb/install-mongodb-community-edition
 
-- 下面以MacOS为例安装
+- 下面以MacOS为例安装,Linux类似
 
   ```shell
   # 进入你想下载MongoDB的目录，如/usr/local
@@ -91,35 +91,153 @@
 
 
 
-### 常用命令
+### 基本常用命令
 
-- 创建数据库
+- **数据库**操作
+
+  - 数据库命名规范：
+    - 不能是空字符串；
+    - 不得含有``' '``(空格)、`.`、`$`、`/`、`\`和`\0` (空字符)；
+    - 全小写；
+    - 最多64字节
+  - 默认自带数据库
+    - admin: 从权限的角度来看，这是"root"数据库。要是将一个用户添加到这个数据库，这个用户自动继承所有数据库的权限。一些特定的服务器端命令也只能从这个数据库运行，比如列出所有的数据库或者关闭服务器。
+    - local: 这个数据永远不会被复制，可以用来存储限于本地单台服务器的任意集合
+    - config: 当MongoDB用于分片设置时，config数据库在内部使用，用于保存分片的相关信息。
 
   ```shell
-  show dbs # 查看所有数据库
-  use runoob # 创建数据库
+  show dbs # (or databases) 查看所有数据库 
+  use runoob # 选择和创建数据库
   db # 查看当前使用的数据库
+  
+  db.dropDatabase() # 删除数据库
   ```
 
-- 创建集合
+- **集合**操作
+
+  - 集合命名规范：
+    - 不能是空字符串；
+    - 不能含有`\0`(空字符)
+    - 不能以``system.``开头，这是为系统集合保留的前缀
+    - 用户创建的集合名字不能含有保留字符；除非你要访问这种系统创建的集合，否则千万不要在名字里出现`$`。
 
   ```shell
-  db.createCollection(name, options)
-  # capped: 如果为 true，则创建固定集合。固定集合是指有着固定大小的集合，当达到最大值时，它会自动覆盖最早的文档。当该值为 true 时，必须指定 size 参数。
-  # size:为固定集合指定一个最大值，单位为Byte。
-  # max: 指定固定集合中包含文档的最大数量。
+  show collections #  (or tables) 查看当前库中的集合
+  db.createCollection(name, options)  # 创建集合
+  	## capped: 如果为 true，则创建固定集合。固定集合是指有着固定大小的集合，当达到最大值时，它会自动覆盖最早的文档。当该值为 true 时，必须指定 size 参数。
+  	## size:为固定集合指定一个最大值，单位为Byte。
+  	## max: 指定固定集合中包含文档的最大数量。
   db.createCollection("mycol", { capped : true, size : 6142800, max : 10000 } )
+  
+  db.collectionName.drop() # 删除集合
   ```
 
-- 插入文档
+- **文档**操作
+
+  - 注意：
+    - key的命名规范：不能含有`\0`(空字符)；``.``和`$`有特别的意义，只有在特定环境下才能使用。
+    - 文档中的键/值对是有序的；MongoDB区分类型和大小写；MongoDB的文档不能有重复的键；以下划线`_`开头的键是保留的(不是严格要求的)。
+    - mongo中的数字，默认情况下是double类型，如果要存整型，必须使用函数``NumberInt(num)``，否则取出来就有问题了；插入当前日期使用new Date()；插入的数据没有指定 _id ，会自动生成主键值
+    - 批量插入时，如果某条数据插入失败，将会终止插入，但已经插入成功的数据不会回滚掉。
 
   ```shell
-  db.COLLECTION_NAME.insert(document) 
-  db.mycol.insert({title: 'MongoDB', 
+  # 插入一条文档（插入文档时，如果该collection不存在时，会自动创建）
+  db.collectionName.insert(<document>, { writeConcern: <document>, ordered: <boolean>}) 
+  	## writeConcern：写入策略，默认为 1，即要求确认写操作，0 是不要求。
+  	## ordered：指定是否按顺序写入，默认true，按顺序写入。
+  db.col.insert({title: 'MongoDB', 
       description: 'MongoDB: Nosql Database',
       url: 'http://docs.mongoing.com',
-      tags: ['mongodb', 'database', 'NoSQL'],
-  })
+      tags: ['mongodb', 'database', 'NoSQL']})
+  
+  # 批量插入文档
+  db.col.insertMany([
+  {title: 'MongoDB', description: 'MongoDB: Nosql Database',url: 'http://docs.mongoing.com', tags: ['mongodb', 'database', 'NoSQL'], likenum:50},
+  {title: 'Redis', description: 'Redis: Nosql Database',url: 'http://docs.redis.com', tags: ['redis', 'database', 'NoSQL'], likenum:150},
+  {title: 'MySQL', description: 'MySQL: Relational Database',url: 'http://docs.mysql.com', tags: ['mysql', 'database', 'SQL'], likenum:300}
+  ]);
+  
+  # 文档的基本查询
+  db.collectionName.find(query, projection)
+   ## query ：可选，使用查询操作符指定查询条件
+   ## projection ：可选，投影操作符指定返回的键。
+   
+  db.col.find()  # 查询所有
+  db.col.find({title:"Redis"}, {title:1, url:1}) # 查询title为redis的数据，返回title和url字段
+  
+  # 文档的更新
+  db.collectionName.update(query, update, options)
+   ## update: $set 和 $inc (对原有值增加) 如 {$inc:{likenum:NumberInt(1)}}
+   ## upsert：可选，默认是false，如果不存在update的记录，是否插入新文档, true为插入
+   ## multi: 可选，默认是false,只更新第一条记录，如果这个参数为true,按条件查出来多条记录全部更新。
+  
+  db.col.update({title:"Redis"}, {$set:{url:'http://org.redis.com'}}, {multi:true})
+  
+  # 删除文档 
+  db.collectionName.remove(query, {justOne: <boolean>})
+   ## justOne 可选,如果设为 true 或 1，则只删除一个文档，默认false，删除所有匹配条件的文档。
+  db.col.remove({}) # 删除全部数据
+  db.col.remove({title:"MySQL"}) # 删除title为MySQL的数据
   ```
 
   
+
+### 文档的高级查询
+
+- 条件操作符
+
+  <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/MongoDB-query.png" style="zoom:50%;" />
+
+- 文档的统计查询 `count()`
+
+  ```shell
+  db.collectionName.count(query)
+   
+  db.col.count() # 统计col集合的所有的记录数
+  db.col.count({likenum:{$gt:100}}) # 统计为likenum大于100的记录条数
+  ```
+
+- 文档的分页列表查询 `limit()`  `skip()`
+
+  ```shell
+  db.collectionName.find().limit(num) # 返回指定条数的记录,默认值20
+  db.collectionName.find().skip(num) # 接受一个数字参数作为跳过的记录条数(前N个不要),默认值是0
+  
+  db.col.find().skip(0).limit(2) # 第一页
+  db.col.find().skip(2).limit(2) # 第二页
+  db.col.find().skip(4).limit(2) # 第三页
+  ```
+
+- 文档的排序查询 `sort()`
+
+  ```shell
+  db.collectionName.find().sort({key:1}) # 1为升序 -1为降序
+  
+  db.col.find().sort({likenum:-1}) # 对likenum进行升序排列
+  ```
+
+- 正则的复杂条件查询 
+
+  ```shell
+  db.collectionName.find({key:/正则表达式/})
+  
+  db.col.find({description:/Nosql/})
+  ```
+
+- 包含查询 `$in`
+
+  ```shell
+  db.col.find({title:{$in:["MongoDB","Redis"]}})
+  ```
+
+- 条件连接查询 `$and` `$or`
+
+  ```shell
+  $and:[{query1},{query2},{query3}]
+  $or:[{query1},{query2},{query3}]
+  
+  db.col.find({$or:[ {title:"MongoDB"} ,{likenum:{$gt:200} }]})
+  ```
+
+  
+
