@@ -138,7 +138,7 @@
     - key的命名规范：不能含有`\0`(空字符)；``.``和`$`有特别的意义，只有在特定环境下才能使用。
     - 文档中的键/值对是有序的；MongoDB区分类型和大小写；MongoDB的文档不能有重复的键；以下划线`_`开头的键是保留的(不是严格要求的)。
     - mongo中的数字，默认情况下是double类型，如果要存整型，必须使用函数``NumberInt(num)``，否则取出来就有问题了；插入当前日期使用new Date()；插入的数据没有指定 _id ，会自动生成主键值
-    - 批量插入时，如果某条数据插入失败，将会终止插入，但已经插入成功的数据不会回滚掉。
+    - 批量插入时，如果某条数据插入失败，将会终止插入，但已经插入成功的数据不会回滚掉。/usr/local/mongodb/bin
 
   ```shell
   # 插入一条文档（插入文档时，如果该collection不存在时，会自动创建）
@@ -197,7 +197,7 @@
   db.col.count({likenum:{$gt:100}}) # 统计为likenum大于100的记录条数
   ```
 
-- 文档的分页列表查询 `limit()`  `skip()`
+- 文档的分页列表查询 `limit()`  `skip()`
 
   ```shell
   db.collectionName.find().limit(num) # 返回指定条数的记录,默认值20
@@ -237,6 +237,139 @@
   $or:[{query1},{query2},{query3}]
   
   db.col.find({$or:[ {title:"MongoDB"} ,{likenum:{$gt:200} }]})
+  ```
+
+  
+
+### 索引
+
+- **What？**Index是特殊的数据结构（MongoDB索引使用B-树数据结构），它以易于遍历的形式存储集合数据集的一小部分。索引存储特定字段或一组字段的值，按字段值排序。索引项的排序支持有效的高效的查询操作。此外，MongoDB还可以使用索引中的排序返回排序结果。如果没有索引，MongoDB必须执行全集合扫描，即扫描集合中的每个文档，以选择与查询语句匹配的文档，查询效率非常低。
+
+- **分类**
+
+  - **单字段索引(Single Field Index)**：在文档的单个字段上创建用户定义的升序/降序索引，称为单字段索引
+  - **复合索引(Compound Index)**：支持自定义的多个字段索引。复合索引中列出的字段顺序具有重要意义。例如，如果复合索引由{ userid: 1, score: -1 }组成，则索引首先按userid正序排序，然后 在每个userid的值内，再在按score倒序排序。
+  - **地理空间索引(Geospatial Index)**：支持对地理空间坐标数据的有效查询。可以应用在O2O（OnlineToOffline）的场景，比如『查找附近的美食』、『查找某个区域内的车站』等。
+  - **文本索引(Text Index)**：MongoDB提供了一种文本索引类型，支持在集合中搜索字符串内容。能解决快速文本查找的需求，比如有一个博客文章集合，需要根据博客的内容来快速查找。
+  - **哈希索引(Hashed Index)**：是指按照某个字段的hash值来建立索引，目前主要用于MongoDB Sharded Cluster的Hash分片。
+
+- **索引基本操作**
+
+  ```shell
+  # 查看索引
+  db.collectionName.getIndexes()
+  
+  # 创建索引
+  db.collectionName.createIndex(keys, options)
+  	# keys：  {字段:1或-1}表示升序或者是降序
+  	# name: 索引的名称。若未指定，连接索引的字段名和排序顺序生成一个索引名称。‘
+  	# v：索引的版本号。默认的索引版本取决于mongod创建索引时运行的版本。
+  	# expireAfterSeconds：过期时间
+  db.col.createIndex({title:1,likenum:-1})
+  
+  # 移除索引
+   db.collectionName.dropIndex(index) # 可以通过索引名称或索引规范文档指定索引。
+   db.collection.dropIndexes() # 移除所有索引
+  ```
+
+- **覆盖索引查询**: 
+
+  - 覆盖查询满足两个条件：所有的查询字段是索引的一部分，所有的查询返回字段是索引的一部分。由于所有出现在查询中的字段是索引的一部分， MongoDB 无需在整个数据文档中检索匹配查询条件和返回使用相同索引的查询结果。因为索引存在于RAM中，从索引中获取数据比通过扫描文档读取数据要快得多。
+
+  ```shell
+  db.col.createIndex({title:1}) # 先创建索引
+  db.col.find({title:{$in:["MongoDB","Redis"]}}) # 覆盖索引查询查询
+  
+  # 使用explain查询分析函数查看索引是否起作用
+  db.col.find({title:{$in:["MongoDB","Redis"]}}).explain()
+  # "stage" : "COLLSCAN" 表示全集合扫描
+  # "stage" : "IXSCAN" 说明是基于索引的扫描
+  ```
+
+  
+
+### MongoDB Java
+
+- 环境配置：在maven工程中添加依赖
+
+  ```xml
+  <dependencies>
+          <dependency>
+              <groupId>org.mongodb</groupId>
+              <artifactId>mongo-java-driver</artifactId>
+              <version>3.9.1</version>
+          </dependency>
+  </dependencies>
+  ```
+
+- 具体操作：
+
+  ```java
+  public class MongoTest {
+      public static void main(String[] args) {
+          try {
+              MongoClient mongoClient = new MongoClient("127.0.0.1", 27017);
+              // 连接数据库，你需要指定数据库名称，如果指定的数据库不存在，mongo会自动创建数据库。
+              MongoDatabase database = mongoClient.getDatabase("test02");
+              System.out.println("Connect to database successfully");
+  
+              // 创建集合
+              database.createCollection("test");
+              System.out.println("create collection successfully");
+              // 选择集合
+              MongoCollection<Document> test = database.getCollection("test");
+              System.out.println("select collection successfully");
+  
+              //插入文档
+              /**
+               * 1. 创建文档 org.bson.Document 参数为key-value的格式
+               * 2. 创建文档集合List<Document>
+               * 3. 将文档集合插入数据库集合中 mongoCollection.insertMany(List<Document>)
+               *     插入单个文档可以用 mongoCollection.insertOne(Document)
+               * */
+              Document document01 = new Document("title", "MongoDB").
+                      append("description", "nosql database").
+                      append("likes", 50).
+                      append("by", "Cindy");
+              Document document02 = new Document("title", "MySQL").
+                      append("description", "relational database").
+                      append("likes", 150).
+                      append("by", "Bob");
+              List<Document> documents = new ArrayList<Document>();
+              documents.add(document01);
+              documents.add(document02);
+              test.insertMany(documents);
+              System.out.println("insert documents successfully");
+  
+              //检索所有文档
+              /**
+               * 1. 获取迭代器FindIterable<Document>
+               * 2. 获取游标MongoCursor<Document>
+               * 3. 通过游标遍历检索出的文档集合
+               * */
+              FindIterable<Document> iterable = test.find();
+              MongoCursor<Document> cursor = iterable.iterator();
+              while (cursor.hasNext()) {
+                  System.out.println(cursor.next());
+              }
+  
+              //更新文档   将文档中likes=150的文档修改为likes=200
+              test.updateMany(Filters.eq("likes", 100), new Document("$set",new Document("likes",200)));
+              //删除符合条件的文档
+              test.deleteMany(Filters.eq("likes", 200));
+              System.out.println("update and delete ");
+  
+              FindIterable<Document> iterable1 = test.find();
+              MongoCursor<Document> cursor1 = iterable1.iterator();
+              while (cursor1.hasNext()) {
+                  System.out.println(cursor1.next());
+              }
+  
+          } catch (Exception e) {
+              e.printStackTrace();
+          }
+      }
+  }
   ```
 
   
