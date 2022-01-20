@@ -288,7 +288,7 @@
 
   
 
-### MongoDB Java
+### MongoDB Java-driver
 
 - 环境配置：在maven工程中添加依赖
 
@@ -374,3 +374,69 @@
 
   
 
+### MongoDB复制
+
+- **What？**MongoDB复制（副本集）是将数据同步在多个服务器的过程。复制提供了数据的冗余备份，并在多个服务器上存储数据副本，提高了数据的可用性， 并可以保证数据的安全性。复制还允许您从硬件故障和服务中断中恢复数据。与主从模式类似。
+
+- **复制原理**：
+
+  - mongodb的复制至少需要两个节点。其中一个是主节点，负责处理客户端请求，其余的都是从节点，负责复制主节点上的数据。
+  - 主节点记录在其上的所有操作oplog，从节点定期轮询主节点获取这些操作，然后对自己的数据副本执行这些操作，从而保证从节点的数据与主节点一致。
+
+- 具体操作
+
+  ```shell
+  # 通过指定 --replSet 选项来启动mongoDB
+  mongod --port "PORT" --dbpath "YOUR_DB_DATA_PATH" --replSet "REPLICA_SET_INSTANCE_NAME"
+  
+  # 打开mongo shell
+  rs.initiate() # 使用命令启动一个新的副本集
+  rs.conf() # 查看副本集的配置
+  rs.status() # 查看副本集状态
+  
+  rs.add(HOST_NAME:PORT) # 添加副本集的成员
+  # 注意：只能通过主节点将Mongo服务器添加到副本集中，判断当前运行的Mongo服务器是否为主节点可以使用命令db.isMaster() 
+  ```
+
+  
+
+### MongoDB分片
+
+- **What？**Mongodb存在的另一种集群用于横向扩展，分片（Sharding），可以满足MongoDB数据量大量增长的需求。当MongoDB存储海量的数据时，一台机器可能不足以存储数据，也可能不足以提供可接受的读写吞吐量。这时，我们就可以通过在多台机器上分割数据，使得数据库系统能存储和处理更多的数据。
+
+  - 纵向扩展：或者说垂直扩展，意味着增加单个服务器的容量，例如使用更强大的CPU，添加更多RAM或增加存储空间量。
+
+  - 横向扩展：划分系统数据集并加载多个服务器，添加其他服务器以根据需要增加容量。
+
+    <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/MongoDB-sharding.png" style="zoom:50%;" />
+
+- **分片集群的组成**：
+
+  - **Shard**： 用于存储实际的数据块，实际生产环境中一个shard server角色可由几台机器组个一个replica set承担，防止主机单点故障
+  - **Config Server:** mongod实例，存储了整个 ClusterMetadata。
+  - **Query Routers:** 前端路由，是客户端应用程序和分片集群之间的接口。
+
+- 具体实现：
+
+  ```shell
+  # 1 启动多个Shard Server, 如s0 s1
+  mkdir /usr/local/mongodb/shard/s0
+  ./mongod --port 27020 --dbpath=/usr/local/mongodb/shard/s0 --logpath=/usr/local/mongodb/shard/log/s0.log --logappend --fork
+  
+  # 2 启动Config Server
+  mkdir -p /usr/local/mongodb/shard/config
+  ./mongod --port 27100 --dbpath=/usr/local/mongodb/shard/config --logpath=/usr/local/mongodb/shard/log/config.log --logappend --fork
+  
+  # 3 启动Router
+  ./mongos --port 40000 --configdb localhost:27100 --fork --logpath=/usr/local/mongodb/shard/log/route.log --chunkSize 500
+  # chunkSize这一项是用来指定chunk的大小的，单位是MB，默认大小为200MB.
+  
+  # 配置Sharding: 需要登陆到Router服务器的shell中去配置
+  ./mongo admin --port 40000
+  # 登陆到shell中后
+  db.runCommand({ addshard:"localhost:27020" })
+  db.runCommand({ enablesharding:"test" })  #设置分片存储的数据库
+  db.runCommand({ shardcollection: "test.log", key: { id:1} }) # 分片的集合以及分片规则
+  ```
+
+  
