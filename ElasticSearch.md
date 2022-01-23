@@ -38,6 +38,7 @@
 - **字段**(Field): 相当于是数据表的列，对文档数据根据不同属性进行的分类标识。
 - Elasticsearch索引：Elasticsearch 使用一种称为**倒排索引**的结构，它适用于**快速的全文搜索**
   - **正向索引**(forward index): 搜索引擎会将待搜索的文件都对应一个文件 ID，搜索时将这个ID和搜索关键字进行对应，形成K-V对，然后对关键字进行统计计数。（作为搜索引擎，文档数量会巨大，正向索引无法满足实时返回结果）
+  ![](https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/elasticsearch-index.png)
   - **反向索引/倒排索引**(inverted index): 把文件 ID 对应到关键词的映射转换为关键词到文件 ID 的映射，每个关键词都对应着一系列的文件。
 
 
