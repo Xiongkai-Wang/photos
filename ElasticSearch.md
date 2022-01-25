@@ -38,7 +38,9 @@
 - **字段**(Field): 相当于是数据表的列，对文档数据根据不同属性进行的分类标识。
 - Elasticsearch索引：Elasticsearch 使用一种称为**倒排索引**的结构，它适用于**快速的全文搜索**
   - **正向索引**(forward index): 搜索引擎会将待搜索的文件都对应一个文件 ID，搜索时将这个ID和搜索关键字进行对应，形成K-V对，然后对关键字进行统计计数。（作为搜索引擎，文档数量会巨大，正向索引无法满足实时返回结果）
-  ![](https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/elasticsearch-index.png)
+  
+    ![](https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/elasticsearch-index.png)
+  
   - **反向索引/倒排索引**(inverted index): 把文件 ID 对应到关键词的映射转换为关键词到文件 ID 的映射，每个关键词都对应着一系列的文件。
 
 
@@ -65,4 +67,152 @@
   ```
 
 
+
+### Elasticsearch访问
+
+- Elasticsearch **使用的是标准的 RESTful 风格的 API** 。实际开发中，主要有三种方式可以作为es服务的客户端
+
+  - es提供的**RESTful接口**直接访问
+  - elasticsearch-**head插件**访问
+  - es提供的**API**进行访问，支持Java、Python、Php、Go等多种语言
+
+- **使用RESTful接口直接访问**
+
+  - 如果直接通过浏览器向 Elasticsearch 服务器发请求，那么需要在发送的请求中包含HTTP标准的方法，而 HTTP 的大部分特性仅支持 GET 和 POST 方法。所以为了能方便地进行客户端的访问，可以使用 Postman 软件
+  - Postman是一款强大的网页调试工具，提供功能强大的 Web API 和 HTTP 请求调试。
+  - 下载安装地址：https://www.getpostman.com/apps。支持Linux、MacOS和Windows
+
+- **什么是RESTful风格？**
+
+  - REST，即Representational State Transfer的缩写，翻译为表现层状态转化
+
+    - **省略的主语-资源（Resources）** ：它可以是一段文本、一张图片、一首歌曲、一种服务，总之就是一个具体的实在。你可以用一个URI（统一资源定位符）指向它，每种资源对应一个特定的URI。
+    - **表现层（Representation）**；"资源"是一种信息实体，它可以有多种外在表现形式。"资源"具体呈现出来的形式，叫做它的"表现层"（Representation）。文本可以用txt格式表现，也可以用HTML格式、XML格式、JSON格式表现，甚至可以采用二进制格式；图片可以用JPG格式表现，也可以用PNG格式表现。URI只代表资源的实体，不代表它的形式。
+      - 有些网址最后的".html"后缀名是不必要的，因为这个后缀名表示格式，属于"表现层"范畴，而URI应该只代表"资源"的位置。在RESTful中，它的具体表现形式，应该在HTTP请求的头信息中用Accept和Content-Type字段指定。
+    - **状态转化（State Transfer）**：访问一个网站，就代表了客户端和服务器的一个互动过程。在这个过程中，势必涉及到数据和状态的变化。在RESTful中，利用HTTP协议里面表示操作方式的动词来进行基本操作：**GET用来获取资源，POST用来新建资源（也可以用于更新资源），PUT用来更新资源，DELETE用来删除资源。**对资源的操作与资源本身无关，操作是通过 HTTP动词来体现，所以REST ful通过URI暴露资源时，会强调不要在 URI 中出现动词。
+
+  - **RESTful的实现
+    **：REST 风格提倡 URI地址使用统一的风格设计，从前到后各个单词使用斜杠分开，不使用问号键值对方式携带请求参数，而是将要发送给服务器的数据作为 URL 地址的一部分，以保证整体风格的一致性。
+
+  - 举例：
+
+    ```shell
+    GET /rest/api/getCats --> GET /rest/api/cats  # 获取所有小猫 
+    GET /rest/api/addCats --> POST /rest/api/cats # 添加一个小猫
+    GET /rest/api/updateCats?cat_id=1 --> PUT /rest/api/dogs/1 # 修改一个小猫
+    GET /rest/api/deleteCats?cat_id=1 --> DELETE /rest/api/dogs/1 # 删除一个小猫
+    ```
+
+
+
+### 索引操作
+
+- 创建索引
+
+  ```shell
+  PUT http://127.0.0.1:9200/shopping
+  
+  # 返回结果：
+  {
+    "acknowledged": true, # 【响应结果】true操作成功 
+    "shards_acknowledged": true, # 【分片结果】 分片操作成功 
+    "index": "shopping" # 【索引名称】
+  }
+  ```
+
+- 查看索引
+
+  ```shell
+  # 查看所有索引
+  GET http://127.0.0.1:9200/_cat/indices?v
+  # _cat 表示查看的意思; indices 表示索引; ?v 表示显示详细信息
+  
+  # 查看单个索引
+  GET http://127.0.0.1:9200/shopping
+  # 查看索引的请求路径和创建索引是一致的。但是HTTP方法不一致。这里可以体现RESTful的意义，
+  ```
+
+- 删除索引
+
+  ```shell
+  GET http://127.0.0.1:9200/shopping
+  ```
+
+
+
+### 文档操作
+
+- 创建文档
+
+  ```shell
+  POST http://127.0.0.1:9200/shopping/_doc # 会随机生成指定数据唯一性标识(ID)
+  
+  # 在request body中加入
+  {
+    "title":"mate40",
+    "category":"phone", 
+    "images":"https://consumer.huawei.com/cn/phones", 
+    "price":4999.00
+  }
+  
+  # 如果想要自定义唯一性标识，需要在创建时指定
+  POST http://127.0.0.1:9200/shopping/_doc/1
+  {
+    "title":"iphone 13",
+    "category":"phone", 
+    "images":"https://www.apple.com.cn/iphone/", 
+    "price":5999.00
+  }
+  
+  # 返回的response body中
+  "_version": 1, # 对数据的操作，都会更新版本
+  "result": "created", #created表示创建成功
+  ```
+
+- 查看文档: 查看文档时，需要指明文档的唯一性标识
+
+  ```shell
+  GET http://127.0.0.1:9200/shopping/_doc/1
+  ```
+
+- 修改文档
+
+  ```shell
+  # 1-修改整个文档
+  POST http://127.0.0.1:9200/shopping/_doc/1 # 会将原有的数据内容覆盖
+  
+  # 2-修改字段
+  POST http://127.0.0.1:9200/shopping/_update/1
+  	# 在request body中加入：
+  {
+    "doc": {
+       "price":6299.00
+      }
+  }
+  
+  # 返回的response body中
+  "result": "updated", # updated表示数据被更新
+  ```
+
+- 删除文档
+
+  ```shell
+  # 1--根据id删除
+  DELETE http://127.0.0.1:9200/shopping/_doc/1
+  
+  # 返回的response body中
+  "result": "deleted", # deleted表示数据被标记为删除
+  
+  # 2--根据条件删除
+  POST http://127.0.0.1:9200/shopping/_delete_by_query
+   # 在request body中加入：
+  {
+    "query":{
+       "match":{
+         "price":5000.00
+    } }
+  }
+  ```
+
+  
 
