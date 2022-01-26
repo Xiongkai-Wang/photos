@@ -135,7 +135,7 @@
 - 删除索引
 
   ```shell
-  GET http://127.0.0.1:9200/shopping
+  DELETE http://127.0.0.1:9200/shopping
   ```
 
 
