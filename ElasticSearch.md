@@ -99,13 +99,13 @@
     ```shell
     GET /rest/api/getCats --> GET /rest/api/cats  # 获取所有小猫 
     GET /rest/api/addCats --> POST /rest/api/cats # 添加一个小猫
-    GET /rest/api/updateCats?cat_id=1 --> PUT /rest/api/dogs/1 # 修改一个小猫
-    GET /rest/api/deleteCats?cat_id=1 --> DELETE /rest/api/dogs/1 # 删除一个小猫
+    GET /rest/api/updateCats?cat_id=1 --> PUT /rest/api/cats/1 # 修改一个小猫
+    GET /rest/api/deleteCats?cat_id=1 --> DELETE /rest/api/cats/1 # 删除一个小猫
     ```
 
 
 
-### 索引操作
+### HTTP操作-索引操作
 
 - 创建索引
 
@@ -140,7 +140,7 @@
 
 
 
-### 文档操作
+### HTTP操作-文档操作
 
 - 创建文档
 
@@ -216,3 +216,358 @@
 
   
 
+### HTTP操作-映射操作
+
+- **What？**映射Mapping类似于数据库(database)中的表结构(schema)。创建数据库表需要设置字段名称，类型，长度，约束等；索引库也一样，需要知道这个类型下有哪些字段，每个字段有哪些约束信息，这就叫做映射(mapping)。
+
+- 创建映射：
+
+  ```shell
+  PUT http://127.0.0.1:9200/student/_mapping
+  
+  # 在properties中添加映射规则
+  {
+    "properties": {
+        "name":{
+           "type": "text",
+           "index": true
+      		}, 
+      	"sex":{
+           "type": "text",
+           "index": true
+         	},
+        "age":{
+           "type": "long",
+           "index": true
+  				} 
+  	}
+  }
+  
+  # type:	String (包括text--可分词和keyword--不可分词)、Numerical（long、integer、short、byte、double、float、half_float、scaled_float）、Date、Array和Object
+  # index:是否索引，默认为true，所有字段都会被索引。false:字段不会被索引，不能用来搜索
+  
+  ```
+
+- 查看映射
+
+  ```shell
+  GET http://127.0.0.1:9200/student/_mapping
+  ```
+
+- 创建索引时关联映射
+
+  ```shell
+  PUT http://127.0.0.1:9200/student1
+  
+  # 添加映射内容
+  {
+    "settings": {},
+    "mappings": {
+        "properties": {
+          "name":{
+           "type": "text",
+           "index": true
+  				 }, 
+  				 "sex":{
+           "type": "text",
+           "index": false
+          },
+          "age":{
+           "type": "long",
+  					"index": false
+          }
+         }
+  		} 
+  }
+  ```
+
+  
+
+### HTTP操作-高级查询
+
+- 查询所有文档
+
+  ```shell
+  GET http://127.0.0.1:9200/student/_search
+  {
+  	"query": {
+    	"match_all": {}
+   	 }
+  }
+  #  "query":这里的query代表一个查询对象，里面可以有不同的查询属性 
+  #  "match_all":查询类型，例如:match_all(代表查询所有)， match，term ， range 等等 
+  # 	{}:查询条件会根据类型的不同，写法也有差异
+  
+  # 结果在返回的hits字段中，total表示匹配总数
+  ```
+
+- 匹配查询
+
+  ```shell
+  # match会把查询条件进行分词，然后进行查询，多个词条之间是 or 的关系
+  # 比如查询“北京奥运”，会分词为北京，奥运，北京奥运，只要搜索词为这三个之一，都可以将这篇文章搜索出来
+  GET http://127.0.0.1:9200/student/_search 
+  {
+  	"query": {
+        "match": {
+          "name":"zhangsan"
+        }
+   	 }
+  }
+  ```
+
+- 字段匹配查询
+
+  ```shell
+  # multi_match 与 match 类似，不同的是它是在多个字段中查询该值。
+  GET http://127.0.0.1:9200/student/_search 
+  {
+    "query": {
+       "multi_match": {
+           "query": "zhangsan",
+           "fields": ["name","nickname"]
+    		} 
+    }
+  }
+  ```
+
+- 关键字精确查询
+
+  ```shell
+  GET http://127.0.0.1:9200/student/_search 
+  # 1--单关键字：term查询，精确的关键词匹配查询，不对查询条件进行分词
+  {
+    "query": {
+       "term": {
+         "name": {
+           "value": "zhangsan"
+         }
+    	} 
+    }
+  }
+  
+  # 2--多关键字：terms，允许你指定多值进行匹配。
+  {
+    "query": {
+       "terms": {
+         "name": ["zhangsan","lisi"]
+    	} 
+    }
+  }
+  ```
+
+- 指定查询字段
+
+  ```shell
+  # 默认情况下，Elasticsearch在搜索的结果中，会把文档中所有字段都返回。 如果我们只想获取其中的部分字段，我们可以添加_source 的过滤
+  GET http://127.0.0.1:9200/student/_search 
+  {
+  	"_source": ["name","nickname"],
+    "query": {
+       "terms": {
+         "name": ["zhangsan","lisi"]
+    	} 
+    }
+  }
+  
+  ## 用includes:来指定想要显示的字段
+  ## 用excludes:来指定不想要显示的字段
+  "_source": {
+     "includes": ["name","nickname"]
+    }
+  ```
+
+- 组合查询
+
+  ```shell
+  # `bool`把各种其它查询通过`must`(必须 )、`must_not`(必须不)、`should`(应该)的方式进行组合
+  # must:如果有多个条件，这些条件都必须满足 and与;
+  # should:如果有多个条件，满足一个或多个即可 or或
+  # must_not:和must相反，必须都不满足条件才可以匹配到 ！非
+  GET http://127.0.0.1:9200/student/_search 
+  {
+    "query": {
+       "bool": {
+         "must": [
+              {
+              "match": {
+              	"name": "zhangsan"
+              	}
+           		} ],
+         "must_not": [
+             {
+              "match": {
+                "age": "40"
+    						} 
+    				} ],
+         "should": [
+             {
+             "match": {
+            		 "sex": "男" 
+            		 }
+             } ]
+    		} 
+    }
+  }
+  ```
+
+- 范围查询
+
+  ```shell
+  # range 查询找出那些落在指定区间内的数字或者时间
+  # 支持gt、gte、lt、lte四种
+  GET http://127.0.0.1:9200/student/_search 
+  {
+    "query": {
+         "range": {
+           	"age": {
+              "gte": 30,
+              "lte": 35 
+              }
+    				} 
+     }
+  }
+  ```
+
+- 模糊查询
+
+  ```shell
+  # 返回包含与搜索字词相似的字词的文档。
+  # 编辑距离是将一个术语转换为另一个术语所需的一个字符更改的次数: 更改字符(box → fox)，删除字符(black → lack)、插入字符(sic → sick)、转置两个相邻字符(act → cat)
+  # 为了找到相似的术语，fuzzy 查询会在指定的编辑距离内创建一组搜索词的所有可能的变体 或扩展。然后查询返回每个扩展的完全匹配。
+  GET http://127.0.0.1:9200/student/_search 
+  {
+      "query": {
+         "fuzzy": {
+           "name": {
+             "value": "zhangsan",
+             "fuzziness": 2
+           	}
+      		} 
+      	}
+  }
+  ```
+
+- 字段排序
+
+  ```shell
+  # sort 可以让我们按照不同的字段进行排序，并且通过 order 指定排序的方式。desc 降序，asc 升序。
+  GET http://127.0.0.1:9200/student/_search 
+  # 1--单字段排序
+  {
+    "query": {
+       "match_all": {} 
+     },
+      "sort": [
+      	{
+           "age": {
+               "order":"desc"
+           }
+    		}
+    	] 
+  }
+  
+  # 2--多字段排序
+  {
+    "query": {
+       "match_all": {} 
+     },
+      "sort": [
+      	{
+         "age": {
+             "order":"desc"
+         	}
+        }
+        {
+          "_score":{
+                 "order": "desc"
+              }
+  				}
+       ] 
+  }
+  ```
+
+- 高亮查询
+
+  ```shell
+  # 在进行关键字搜索时，搜索出的内容中的关键字会显示不同的颜色，称之为高亮。
+  GET http://127.0.0.1:9200/student/_search 
+  {
+     "query": {
+         "match": {
+           "name": "zhangsan"
+      		} 
+      },
+    	"highlight": {
+         "pre_tags": "<font color='red'>", # 前置标签
+         "post_tags": "</font>", # 后置标签
+         "fields": {
+      				"name": {}  # 需要高亮的字段
+      		}
+  		} 
+  }
+  ```
+
+- 分页查询
+
+  ```shell
+  # from:当前页的起始索引，默认从 0 开始。 from = (pageNum - 1) * size 
+  # size:每页显示多少条
+  GET http://127.0.0.1:9200/student/_search 
+  {
+    "query": {
+       "match_all": {}
+      },
+    "sort": [ {
+         "age": {
+           "order": "desc"
+    			} 
+     } ],
+     "from": 0,
+     "size": 2
+  }
+  ```
+
+- 聚合查询
+
+  ```shell
+  # 聚合允许使用者对 es 文档进行统计分析，例如取最大值、平均值等等。
+  GET http://127.0.0.1:9200/student/_search 
+  {
+  	"aggs":{
+       "max_age":{ # 对某个字段取最大值 max
+         "max":{"field":"age"}
+  		} },
+  	"size":0 
+  }
+  
+  # State 聚合对某个字段一次性返回 count，max，min，avg 和 sum 五个指标
+  {
+      "aggs":{
+           "stats_age":{
+             "stats":{"field":"age"}
+      		} },
+      "size":0 
+  }
+  ```
+
+- 桶聚合查询
+
+  ```shell
+  # 桶聚和相当于 sql 中的 group by 语句
+  {
+    "aggs":{
+         "age_groupby":{ 
+             "terms":{"field":"age"}, # 先在terms分组
+             "aggs": { # 在分组后再进行聚合
+                "stats_age":{
+                    "stats":{"field":"age"}
+                  }
+              }
+    			} 
+    },
+    "size":0 
+  }
+  ```
+
+  
