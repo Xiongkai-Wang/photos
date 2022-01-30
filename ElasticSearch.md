@@ -571,3 +571,153 @@
   ```
 
   
+
+### Java API
+
+- 创建maven工程，引入依赖
+
+  ```xml
+  <dependency>
+     <groupId>org.elasticsearch</groupId>
+     <artifactId>elasticsearch</artifactId>
+     <version>7.16.3</version>
+  </dependency>
+  <dependency>
+    <groupId>org.elasticsearch.client</groupId>
+    <artifactId>elasticsearch-rest-high-level-client</artifactId>
+    <version>7.16.3</version>
+  </dependency>
+  <dependency>
+    <groupId>com.fasterxml.jackson.core</groupId>
+    <artifactId>jackson-databind</artifactId>
+    <version>2.12.3</version>
+  </dependency>
+  ```
+
+- 建立client连接
+
+  ```java
+  // 1--Java Transport Client 
+  TransportClient client = new PreBuiltTransportClient(Settings.EMPTY)
+          .addTransportAddress(new TransportAddress(InetAddress.getByName("host1"), 9300))
+          .addTransportAddress(new TransportAddress(InetAddress.getByName("host2"), 9300));
+  
+  // 2--Java REST Client
+  RestHighLevelClient client = new RestHighLevelClient(
+                  RestClient.builder(new HttpHost("localhost", 9200, "http"))
+          );
+  
+  // 3--Java API 7.16.3
+  RestClient restClient = RestClient.builder(
+      new HttpHost("localhost", 9200)).build();
+  ElasticsearchTransport transport = new RestClientTransport(
+      restClient, new JacksonJsonpMapper());
+  ElasticsearchClient client = new ElasticsearchClient(transport);
+  ```
+
+  
+
+- 索引操作
+
+  ```java
+  // 1--创建索引
+  CreateIndexRequest request1 = new CreateIndexRequest("user01");
+  // 发送请求，获取响应
+  CreateIndexResponse response1 = client.indices().create(request1, RequestOptions.DEFAULT);
+  System.out.println("响应状态：" + response1.isAcknowledged());
+  
+  // 2--查询索引 
+  GetIndexRequest request2 = new GetIndexRequest("user");
+  GetIndexResponse response2 = client.indices().get(request2, RequestOptions.DEFAULT);
+  System.out.println("aliases:"+response2.getAliases());
+  System.out.println("settings:"+response2.getSettings());
+  
+  // 3--删除索引 - 请求对象
+  DeleteIndexRequest request = new DeleteIndexRequest("user");
+  AcknowledgedResponse response = client.indices().delete(request, RequestOptions.DEFAULT);
+  System.out.println("操作结果 : " + response.isAcknowledged());
+  ```
+
+- 文档操作
+
+  ```java
+  // 1--新增文档 
+  IndexRequest request = new IndexRequest();
+  // 设置索引及唯一性标识
+  request.index("user").id("1001");
+  // 创建数据对象
+  User user = new User();
+  user.setName("zhangsan");
+  user.setAge(30);
+  user.setSex("male");
+  ObjectMapper objectMapper = new ObjectMapper();
+  String productJson = objectMapper.writeValueAsString(user);
+  // 添加文档数据，数据格式为 JSON 格式
+  request.source(productJson, XContentType.JSON);
+  // 客户端发送请求，获取响应对象
+  IndexResponse response = client.index(request, RequestOptions.DEFAULT);
+  System.out.println("_index:" + response.getIndex());
+  System.out.println("_id:" + response.getId());
+  System.out.println("_result:" + response.getResult());
+  
+  // 2--修改文档 - 请求对象
+  UpdateRequest request2 = new UpdateRequest();
+  // 配置修改参数
+  request2.index("user").id("1001");
+  // 设置请求体，对数据进行修改
+  request2.doc(XContentType.JSON, "sex", "女");
+  UpdateResponse response2 = client.update(request2, RequestOptions.DEFAULT);
+  System.out.println("_index:" + response2.getIndex());
+  System.out.println("_id:" + response2.getId());
+  System.out.println("_result:" + response2.getResult());
+  System.out.println("--------------------");
+  
+  
+  // 3--修改文档
+  GetRequest request3 = new GetRequest().index("user").id("1001");
+  GetResponse response3 = client.get(request3, RequestOptions.DEFAULT);
+  System.out.println("_index:" + response3.getIndex());
+  System.out.println("_type:" + response3.getType()); System.out.println("_id:" + response.getId());
+  System.out.println("source:" + response3.getSourceAsString());
+  System.out.println("--------------------");
+  
+  
+  // 4--删除文档
+  DeleteRequest request4 = new DeleteRequest().index("user").id("1"); 
+  DeleteResponse response4 = client.delete(request4, RequestOptions.DEFAULT); 
+  System.out.println(response.toString());
+  System.out.println("--------------------");
+  ```
+
+  
+
+- 查询操作
+
+  ```java
+  // 创建搜索请求对象
+  SearchRequest request = new SearchRequest();
+  request.indices("student");
+  // 构建查询的请求体
+  SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+  // 设置查询类型： 查询所有数据
+  sourceBuilder.query(QueryBuilders.matchAllQuery());
+  // sourceBuilder.query(QueryBuilders.termQuery("age", "30")); // term查询
+  // sourceBuilder.sort("age", SortOrder.ASC); // 排序查询
+  // RangeQueryBuilder rangeQuery = QueryBuilders.rangeQuery("age"); // 范围查询
+  // rangeQuery.gte("30");
+  // rangeQuery.lte("40");
+  // sourceBuilder.query(QueryBuilders.fuzzyQuery("name","zhangsan").fuzziness(Fuzziness.ONE)); // 模糊查询
+  // sourceBuilder.aggregation(AggregationBuilders.max("maxAge").field("age")); // 聚合查询
+  request.source(sourceBuilder);
+  SearchResponse response = client.search(request, RequestOptions.DEFAULT);
+  System.out.println("took:" + response.getTook());
+  
+  SearchHits hits = response.getHits();
+  System.out.println("total:" + hits.getTotalHits());
+  for (SearchHit hit : hits) {
+    //输出每条查询的结果信息
+    System.out.println(hit.getSourceAsString());
+  }
+  ```
+
+  
