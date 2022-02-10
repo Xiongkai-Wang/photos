@@ -218,7 +218,7 @@
   
   客户端：
   全局超时配置:
-  <dubbo:consumer timeout="5000" />
+  <dubbo:consumer retries="3" />
   
   <dubbo:reference retries="2">
   		<dubbo:method name="Hello" retries="2" />
