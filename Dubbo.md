@@ -206,4 +206,143 @@
 
   
 
+
+
+### Dubbo高级配置
+
+- **重试次数**：当出现失败，重试其它服务器。重试会带来更长延迟。可通过 retries="2" 来设置重试次数(不含第一次)。
+
+  ```xml
+  服务端：
+  <dubbo:service retries="2" />
   
+  客户端：
+  全局超时配置:
+  <dubbo:consumer timeout="5000" />
+  
+  <dubbo:reference retries="2">
+  		<dubbo:method name="Hello" retries="2" />
+  </dubbo:reference>
+  ```
+
+- **超时时间**：由于网络或服务端不可靠，会导致调用出现一种不确定的中间状态(超时)。为了避免超时导致客户端资源挂起耗尽，必须设置超时时间。
+
+  ```xml
+  全局超时配置:
+  <dubbo:consumer timeout="5000" />
+  
+  指定接口以及特定方法超时配置:
+  <dubbo:reference interface="...Service" timeout="2000"> 
+    	<dubbo:method name="Hello" timeout="3000" />
+  </dubbo:reference>
+  ```
+
+  
+
+
+
+### Dubbo高可用
+
+- Zookeeper**注册中心宕机**，仍可以消费 dubbo 暴露的服务：
+
+  - 数据库宕掉后，注册中心仍能通过缓存提供服务列表查询，但不能注册新服务
+  - 注册中心对等集群，任意一台宕掉后，将自动切换到另一台
+  - 注册中心全部宕掉后，服务提供者和服务消费者仍能通过本地缓存通讯，只是不能更新服务
+
+- Dubbo 提供了多种**负载均衡**策略
+
+  - **Random LoadBalance**：随机，按权重设置随机概率。
+
+    - 存在慢的提供者累积请求的问题，比如：第二台机器很慢，但没挂，当请求调到第二台时就卡在那，久而久之，所有请求都卡在调到第二台上。
+
+  - **RoundRobin LoadBalance**：轮循，按公约后的权重设置轮循比率。
+
+    - 同样存在慢的提供者累积请求的问题
+
+  - **LeastActive LoadBalance**：活跃数越低，越优先调用，相同活跃数的进行加权随机。
+
+    - 活跃数是指调用前后计数差。活跃数指调用前后计数差（针对特定提供者：请求发送数 - 响应返回数），表示特定提供者的任务堆积量，活跃数越低，代表该提供者处理能力越强。
+
+  - **ShortestResponse LoadBalance**：最短响应优先，得响应时间越快的提供者，处理更多的请求
+
+    - 可能会造成流量过于集中于高性能节点的问题。
+
+  - **ConsistentHash LoadBalance**：一致性 Hash，相同参数的请求总是发到同一提供者。
+
+    - 当某一台提供者挂时，原本发往该提供者的请求，基于虚拟节点，平摊到其它提供者，不会引起剧烈变动。
+
+  - 配置方式：
+
+    ```xml
+    服务端:
+    <dubbo:service interface="..." loadbalance="roundrobin" />
+    
+    <dubbo:service interface="...">
+        <dubbo:method name="..." loadbalance="roundrobin"/>
+    </dubbo:service>
+    
+    客户端：
+    <dubbo:reference interface="..." loadbalance="roundrobin" />
+    
+    <dubbo:reference interface="...">
+        <dubbo:method name="..." loadbalance="roundrobin"/>
+    </dubbo:reference>
+    ```
+
+- **服务降级**：
+
+  - **what？**当服务器压力剧增的情况下，根据实际业务情况及流量，对一些服务和页面有策略的不处理或换种简单的方式处理（选择性的降低这些功能的可用性，或者直接关闭该功能），从而释放服务器资源以保证核心交易正常运作或高效运作。
+
+    - 例如在双十一凌晨抢购的时候，流量压力是很大的，为了保证订单的正常支付，在凌晨1-2点左右的订单修改功能是关闭的。
+
+  - Dubbo可以通过服务降级功能临时屏蔽某个出错的非关键性服务，并定义降级后的返回策略。
+
+    - `mock=force:return+null` 表示消费对该服务的方法调用都直接返回null值，不发起远程调用。用来屏蔽不重要服务不可用时对调用方的影响。
+
+    - `mock=fail:return+null` 表示消费方对该服务的方法调用在失败后，再返回null。用来容忍不重要服务不稳定时对调用方的影响.
+
+      ```xml
+      <dubbo:reference id="xxxService" interface="com.x..service.xxxxService" check="false" mock="return null" />
+      ```
+
+      
+
+### Springboot整合Dubbo
+
+- 引入依赖: 以下依赖自动引入了 dubbo 和 curator 的依赖
+
+  ```xml
+  <dependency>
+      <groupId>com.alibaba.boot</groupId> 
+      <artifactId>dubbo-spring-boot-starter</artifactId> 
+      <version>0.2.0</version>
+  </dependency>
+  ```
+
+- 配置 application.properties
+
+  ```properties
+  # Provider：
+  dubbo.application.name=dubbo-provider # 服务名
+  dubbo.registry.protocol=zookeeper 
+  dubbo.registry.address=127.0.0.1:2181 
+  dubbo.scan.base-package=com.xiongkai.dubbo  # 注解方式要扫描的包
+  dubbo.protocol.name=dubbo # 是分布式系统-固定是dubbo,不要改。
+  
+  # Consumer：
+  dubbo.application.name=dubbo-conusmer # 服务名
+  dubbo.registry.protocol=zookeeper 
+  dubbo.registry.address=127.0.0.1:2181 
+  dubbo.scan.base-package=com.xiongkai.dubbo  
+  dubbo.protocol.name=dubbo 
+  ```
+
+- 使用 dubbo 注解
+
+  - @Service：用来配置 Dubbo 的服务提供方，如实现接口的类。注意该@Service与spring本身提供的service不同（为org.apache.dubbo.config.annotation中的@Service）
+  - @Reference：用来配置 Dubbo 的服务消费方，如需要远程调用的对象
+
+
+
+
+
