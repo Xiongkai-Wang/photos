@@ -88,7 +88,7 @@
 
 - 搭建**EurekaServer**：
 
-  - 创建项目，引入``spring-cloud-starter-netflix-eureka-server`的依赖
+  - 创建项目，引入`spring-cloud-starter-netflix-eureka-server`的依赖
 
     ```xml
     <dependency>
@@ -97,7 +97,7 @@
     </dependency>
     ```
 
-  - 在启动类中添加``@EnableEurekaServer`注解
+  - 在启动类中添加`@EnableEurekaServer`注解
 
   - 在application.yml配置文件中，添加下面的配置
 
@@ -115,7 +115,7 @@
 
 - 在**提供者**和**消费者**中注册：
 
-  - 引入``spring-cloud-starter-netflix-eureka-server`的依赖
+  - 引入`spring-cloud-starter-netflix-eureka-server`的依赖
 
     ```xml
     <dependency>
