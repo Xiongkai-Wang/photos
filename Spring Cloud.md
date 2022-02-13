@@ -101,14 +101,13 @@
 
   - 在application.yml配置文件中，添加下面的配置
 
-    ```yaml
-    
-   server:
-     port:10086
-   spring: 
-      application:
+    ```shell
+    server:
+    		port:10086
+    spring: 
+    		application:
     				name: eurekaserver 
-   eureka:
+    eureka:
     		client: 
     				service-url:
     						defaultZone: http://127.0.0.1:10086/eureka/
@@ -127,15 +126,14 @@
 
   - 在application.yml配置文件中，添加下面的配置
 
-    ```yaml
-    
-   spring: 
-    application:
-    		name: providerServiceName # or comsumerServiceName
+    ```shell
+    spring: 
+    		application:
+    				name: providerServiceName # or comsumerServiceName
     eureka:
-    	client: 
-    			service-url:
-    					defaultZone: http://127.0.0.1:10086/eureka/
+    		client: 
+    				service-url:
+    						defaultZone: http://127.0.0.1:10086/eureka/
     ```
 
   
