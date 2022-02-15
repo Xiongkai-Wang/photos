@@ -74,7 +74,7 @@
 
 
 
-### 注册中心：Eureka
+### 注册中心--Eureka
 
 - **What?** Eureka是注册中心
 
@@ -102,20 +102,20 @@
   - 在application.yml配置文件中，添加下面的配置
 
     ```xml
-    server: 
-      port: 10086
+    server:
+    		port:10086
     spring: 
-      application:
-        name: eurekaserver
+    		application:
+    				name: eurekaserver 
     eureka:
-      client: 
-        service-url:
-          defaultZone: http://127.0.0.1:10086/eureka/
+    		client: 
+    				service-url:
+    						defaultZone: http://127.0.0.1:10086/eureka/
     ```
 
 - 在**提供者**和**消费者**中注册：
 
-  - 引入`spring-cloud-starter-netflix-eureka-server`的依赖
+  - 引入`spring-cloud-starter-netflix-eureka-client`的依赖
 
     ```xml
     <dependency>
@@ -128,12 +128,259 @@
 
     ```xml
     spring: 
-      application:
-        name: providerServiceName # or comsumerServiceName
+    		application:
+    				name: providerServiceName # or comsumerServiceName
     eureka:
-      client: 
-        service-url:
-          defaultZone: http://127.0.0.1:10086/eureka/
+    		client: 
+    				service-url:
+    						defaultZone: http://127.0.0.1:10086/eureka/
     ```
 
   
+
+### 负载均衡--Ribbon
+
+- **What?** : 是Netflix开发的一个负载均衡组件，它在服务体系中起着重要作用，比如远程调用的组件Feign就集成、封装了Ribbonn这个组件。Ribbon是一个客户端负载均衡器，它赋予了客户端一些支配HTTP与TCP行为的能力。
+
+- **工作流程**：
+
+  <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/springcloud-ribbon-principle.png" style="zoom:50%;" />
+
+- **负载均衡策略**：不同的Rule都是实现`IRule`接口
+
+  <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/springcloud-ribbon-rules.png" style="zoom:50%;" />
+
+- **如何配置**：
+
+  - 配置文件方式：在consumer的`application.yml`文件中。
+
+    - 针对某一个服务的配置。
+    - 直观，方便，无需重新打包发布， 但是无法做全局配置
+
+    ```xml
+    userservice:
+    	ribbon:
+    		NFLoadBalancerRuleClassName: com.netflix.loadbalancer.RandomRule
+    ```
+
+  - 代码方式：在consumer的启动类中定义一个新的`IRule`。
+
+    - 是全局的配置，调用的所有服务都会使用
+    - 配置灵活，但修改时需要重新打包发布
+
+    ```java
+    @Bean
+    public IRule randomRule(){ 
+      return new RandomRule();
+    }
+    ```
+
+- **懒加载与饥饿加载**：
+
+  - 懒加载：即第一次访问时才会去创建负载均衡，第一次的请求时间会很长。默认加载方式
+
+  - 饥饿加载：在项目启动时就会创建
+
+    ```xml
+    ribbon:
+    		eager-load:
+    				enable: true
+    				clients: 
+    						- userservice
+    						- orderservice
+    ```
+
+
+
+### 注册和配置中心--Nacos
+
+- **What?**  Nacos是Alibaba的产品，现在是SpringCloud中的一个组件。相比Eureka功能更加丰富，受欢迎程度越来越高。Nacos 致力于帮助发现、配置和管理微服务。Nacos 提供了一组简单易用的特性集，帮助快速实现动态服务发现、服务配置、服务元数据及流量管理。
+
+- 下载与安装：需要java1.8+和maven3.2+的环境。https://nacos.io/zh-cn/docs/quick-start.html
+
+  ```shell
+  # 下载
+  git clone https://github.com/alibaba/nacos.git
+  cd nacos/
+  # maven 安装编译
+  mvn -Prelease-nacos -Dmaven.test.skip=true clean install -U 
+  # 
+  cd distribution/target/nacos-server-$version/nacos/bin
+  
+  # 启动和关闭服务器 (Linux和MacOS)
+  sh startup.sh -m standalone # standalone表示非集群默认
+  sh shutdown.sh
+  
+  # Nacos默认使用8848，可以在conf目录下的application.properties文件中修改
+  # 启动后打开：http://localhost:8848/nacos/ 可以看到nacos控制台，用户密码默认为nacos，可在配置文件中修改
+  ```
+
+- 在Spring Cloud项目中配置Nacos：
+
+  - 在项目中添加Alibaba依赖：
+
+    ```xml
+    <dependency>
+        <groupId>com.alibaba.cloud</groupId> 
+        <artifactId>spring-cloud-alibaba-dependencies</artifactId>		
+      	<version>2.2.6.RELEASE</version>
+        <type>pom</type>
+        <scope>import</scope>
+    </dependency>
+    ```
+
+  - 在各个服务中添加Nacos服务注册依赖: （如有，注释服务中的eureka依赖）
+
+    ```xml
+    <!-- nacos客户端依赖 --> 
+    <dependency>
+        <groupId>com.alibaba.cloud</groupId>
+        <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId> 
+    </dependency>
+    ```
+
+  - 修改各个服务中的配置文件`application.yml`
+
+    ```xml
+    spring:
+    	cloud:
+    		nacos:
+    			server-addr: localhost:8848
+    ```
+
+- **Nacos作为注册中心**：
+
+  - ***Nacos服务分级存储模型***：
+
+    ​	<img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/springcloud-nacos.png" style="zoom:50%;" />
+
+    - 一级是服务，例如userservice；二级是集群，例如上海集群；三级是实例，例如上海集群的某台部署了userservice的服务器
+
+    - 服务跨集群调用问题：服务调用尽可能选择本地集群的服务，跨集群调用延迟较高；本地集群不可访问时，再去访问其它集群
+
+    - 配置服务集群属性：修改`application.yml`
+
+      ```xml
+      spring:
+      	cloud:
+      		nacos:
+      			server-addr: localhost:8848
+      			discovery:
+      				cluster-name: Shanghai
+      ```
+
+  - ***Nacos负载均衡***：
+
+    - 当我们配置了服务的集群属性后，可以使用Nacos负载均衡策略
+
+      ```xml
+      userservice:
+      	ribbon:
+      		NFLoadBalancerRuleClassName: com.alibaba.cloud.nacos.ribbon.NacosRule
+      ```
+
+    - 该策略：尽可能选择本地集群的服务，确定了可用实例列表后，再采用随机负载均衡挑选实例
+
+  - ***Nacos环境隔离***：Nacos中服务存储和数据存储的最外层都是一个名为namespace的东西，用来做最外层隔离
+
+    ​	<img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/springcloud-nacos-namespace.png" style="zoom:50%;" />
+
+    - 可以在在Nacos控制台可以创建namespace，用来隔离不同环境，比如开发生产和测试环境等。每个namespace都有唯一id
+
+    - 在服务中配置namespace：服务设置namespace时要写id而不是名称。只有在同一namespace才可以访问到该服务。
+
+      ```xml
+      spring:
+      	cloud:
+      		nacos:
+      			server-addr: localhost:8848
+      			discovery:
+      				cluster-name: Shanghai
+      				namespace: 492a7d5d-237b-46a1-a99a-fa8e98e4b0f9 
+      				ephemeral: flase
+      ```
+
+  - ***Nacos与Eureka的比较***：
+
+    <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/springcloud-nacos-eureka.png" style="zoom:50%;" />
+
+    - 相同点：都支持服务注册和服务拉取；都支持服务提供者心跳方式做健康检测
+    - 不同点：
+      - Nacos支持服务端主动检测提供者状态:临时实例采用心跳模式，非临时实例采用主动检测模式（临时节点配置如上ephemeral）
+      - Nacos临时实例心跳不正常会被剔除，非临时实例则不会被剔除
+      - Nacos支持服务列表变更的消息推送模式，服务列表更新更及时
+
+- **Nacos作为配置中心**：
+
+  - ***配置Nacos配置中心***：
+
+    - 引入Nacos配置管理依赖
+
+      ```xml
+      <dependency>
+          <groupId>com.alibaba.cloud</groupId>
+          <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId> 
+      </dependency>
+      ```
+
+    - 在服务中添加一个另一个文件-bootstrap.yml，这个文件是引导文件，优先级高于 application.yml。
+
+      <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/springcloud-nacos-configLoad.png" style="zoom:50%;" />
+
+      ```xml
+      spring: 
+      	application:
+      		name: userservice 
+      	profiles:
+      		active: dev 
+      	cloud:
+      		nacos:
+      			server-addr: localhost:8848 
+      			config:
+      				file-extension: yaml 
+      ```
+
+  - ***统一配置的使用***：
+
+    - 新建配置：在Nacos console中新建
+
+      ​	<img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/springcloud-nacos-config-new.png" style="zoom:50%;" />
+
+      - DataID创建规则：springApplicationName-profileActive.fileExtension 例如:userservice-dev.yaml
+
+    - 服务引入Nacos配置：
+
+      ```java
+      @RestController 
+      @RequestMapping("/user") 
+      @RefreshScope
+      public class UserController {
+      	// 用Value注解注入nacos中的配置属性 
+        @Value("${pattern.dateformat}") 
+        private String dateformat;
+      	// 编写controller，通过日期格式化器来格式化现在时间并返回 @GetMapping("now")
+      	public String now(){
+      		return LocalDate.now().format(DateTimeFormatter.ofPattern(dateformat, Locale.CHINA));
+      	}
+      }
+
+    - 配置自动刷新：
+
+      - 方式一：在@Value注入的变量所在类上添加注解@RefreshScope
+
+      - 方式二：使用@ConfigurationProperties注解
+
+        ```java
+        @Component
+        @Data
+        @ConfigurationProperties(prefix = "pattern") 
+        public class PatternProperties {
+        	private String dateformat;
+        }
+        ```
+
+  - **多环境共享配置**：
+
+    - 当DataID为springApplicationName.fileExtension的格式，比如userservice.yaml。那么这个配置会被所有环境的userservice服务加载。
+    - 优先级：非共享配置 > 共享配置 
+
