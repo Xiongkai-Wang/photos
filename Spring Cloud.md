@@ -103,14 +103,14 @@
 
     ```xml
     server:
-    		port:10086
+    	port:10086
     spring: 
-    		application:
-    				name: eurekaserver 
+    	application:
+    		name: eurekaserver 
     eureka:
-    		client: 
-    				service-url:
-    						defaultZone: http://127.0.0.1:10086/eureka/
+    	client: 
+    		service-url:
+    			defaultZone: http://127.0.0.1:10086/eureka/
     ```
 
 - 在**提供者**和**消费者**中注册：
@@ -128,12 +128,12 @@
 
     ```xml
     spring: 
-    		application:
-    				name: providerServiceName # or comsumerServiceName
+    	application:
+    		name: providerServiceName # or comsumerServiceName
     eureka:
-    		client: 
-    				service-url:
-    						defaultZone: http://127.0.0.1:10086/eureka/
+    	client: 
+    		service-url:
+    			defaultZone: http://127.0.0.1:10086/eureka/
     ```
 
   
@@ -183,11 +183,11 @@
 
     ```xml
     ribbon:
-    		eager-load:
-    				enable: true
-    				clients: 
-    						- userservice
-    						- orderservice
+    	eager-load:
+    		enable: true
+    			clients: 
+    				- userservice
+    				- orderservice
     ```
 
 
@@ -243,9 +243,9 @@
 
     ```xml
     spring:
-    	cloud:
-    		nacos:
-    			server-addr: localhost:8848
+      cloud:
+    	  nacos:
+    		  server-addr: localhost:8848
     ```
 
 - **Nacos作为注册中心**：
@@ -262,11 +262,11 @@
 
       ```xml
       spring:
-      	cloud:
-      		nacos:
-      			server-addr: localhost:8848
+        cloud:
+      	  nacos:
+      		  server-addr: localhost:8848
       			discovery:
-      				cluster-name: Shanghai
+      			  cluster-name: Shanghai
       ```
 
   - ***Nacos负载均衡***：
@@ -275,8 +275,8 @@
 
       ```xml
       userservice:
-      	ribbon:
-      		NFLoadBalancerRuleClassName: com.alibaba.cloud.nacos.ribbon.NacosRule
+        ribbon:
+      	  NFLoadBalancerRuleClassName: com.alibaba.cloud.nacos.ribbon.NacosRule
       ```
 
     - 该策略：尽可能选择本地集群的服务，确定了可用实例列表后，再采用随机负载均衡挑选实例
@@ -291,9 +291,9 @@
 
       ```xml
       spring:
-      	cloud:
-      		nacos:
-      			server-addr: localhost:8848
+        cloud:
+      	  nacos:
+      		  server-addr: localhost:8848
       			discovery:
       				cluster-name: Shanghai
       				namespace: 492a7d5d-237b-46a1-a99a-fa8e98e4b0f9 
