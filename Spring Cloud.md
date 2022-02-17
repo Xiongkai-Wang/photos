@@ -103,14 +103,14 @@
 
     ```xml
     server:
-    	port:10086
+    		port:10086
     spring: 
-    	application:
-    		name: eurekaserver 
+    		application:
+    				name: eurekaserver 
     eureka:
-    	client: 
-    		service-url:
-    			defaultZone: http://127.0.0.1:10086/eureka/
+    		client: 
+    				service-url:
+    						defaultZone: http://127.0.0.1:10086/eureka/
     ```
 
 - 在**提供者**和**消费者**中注册：
@@ -128,12 +128,12 @@
 
     ```xml
     spring: 
-    	application:
-    		name: providerServiceName # or comsumerServiceName
+    		application:
+    				name: providerServiceName # or comsumerServiceName
     eureka:
-    	client: 
-    		service-url:
-    			defaultZone: http://127.0.0.1:10086/eureka/
+    		client: 
+    				service-url:
+    						defaultZone: http://127.0.0.1:10086/eureka/
     ```
 
   
@@ -183,11 +183,11 @@
 
     ```xml
     ribbon:
-    	eager-load:
-    		enable: true
-    			clients: 
-    				- userservice
-    				- orderservice
+    		eager-load:
+    				enable: true
+    				clients: 
+    						- userservice
+    						- orderservice
     ```
 
 
@@ -243,9 +243,9 @@
 
     ```xml
     spring:
-      cloud:
-    	  nacos:
-    		  server-addr: localhost:8848
+    	cloud:
+    		nacos:
+    			server-addr: localhost:8848
     ```
 
 - **Nacos作为注册中心**：
@@ -262,11 +262,11 @@
 
       ```xml
       spring:
-        cloud:
-      	  nacos:
-      		  server-addr: localhost:8848
+      	cloud:
+      		nacos:
+      			server-addr: localhost:8848
       			discovery:
-      			  cluster-name: Shanghai
+      				cluster-name: Shanghai
       ```
 
   - ***Nacos负载均衡***：
@@ -275,8 +275,8 @@
 
       ```xml
       userservice:
-        ribbon:
-      	  NFLoadBalancerRuleClassName: com.alibaba.cloud.nacos.ribbon.NacosRule
+      	ribbon:
+      		NFLoadBalancerRuleClassName: com.alibaba.cloud.nacos.ribbon.NacosRule
       ```
 
     - 该策略：尽可能选择本地集群的服务，确定了可用实例列表后，再采用随机负载均衡挑选实例
@@ -291,13 +291,13 @@
 
       ```xml
       spring:
-        cloud:
-      	  nacos:
-      		  server-addr: localhost:8848
+      	cloud:
+      		nacos:
+      			server-addr: localhost:8848
       			discovery:
       				cluster-name: Shanghai
       				namespace: 492a7d5d-237b-46a1-a99a-fa8e98e4b0f9 
-      				ephemeral: flase
+      				ephemeral: false
       ```
 
   - ***Nacos与Eureka的比较***：
@@ -358,7 +358,8 @@
       	// 用Value注解注入nacos中的配置属性 
         @Value("${pattern.dateformat}") 
         private String dateformat;
-      	// 编写controller，通过日期格式化器来格式化现在时间并返回 @GetMapping("now")
+      	// 编写controller，通过日期格式化器来格式化现在时间并返回 
+        @GetMapping("now")
       	public String now(){
       		return LocalDate.now().format(DateTimeFormatter.ofPattern(dateformat, Locale.CHINA));
       	}
@@ -383,4 +384,233 @@
 
     - 当DataID为springApplicationName.fileExtension的格式，比如userservice.yaml。那么这个配置会被所有环境的userservice服务加载。
     - 优先级：非共享配置 > 共享配置 
+
+
+
+### 统一网关--Gateway
+
+- **What？** 网关是一个处于应用程序或服务之前的系统，用来管理授权、访问控制和流量限制等，这样服务就被网关保护起来，对所有的调用者透明。因此，隐藏在网关后面的业务系统就可以专注于创建和管理服务，而不用去处理这些策略性的基础设施。
+
+  - Spring Cloud Gateway是Spring官方开发的网关，旨在为微服务架构提供一种简单而有效的统一的API路由管理方式。Spring Cloud Gateway作为Spring Cloud生态系中的网关，目标是替代ZUUL，其不仅提供统一的路由方式，并且基于Filter链的方式提供网关基本的功能，例如：安全，监控/埋点，和限流等。
+
+    <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/springCloud-gateway-.png" style="zoom:50%;" />
+
+- 网关的**职能**：
+
+  - 对用户请求做身份认证、权限校验：确保请求来源的安全性
+  - 将用户请求路由到微服务，并实现负载均衡
+  - 对用户请求做限流：限制超过系统能力后的请求
+
+- **Gateway与Zuul的比较**：在SpringCloud中网关的实现包括Gateway和Zuul
+
+  - SpringCloud中所集成的Zuul1.0版本，采用的是Tomcat容器，使用的是传统的Servlet IO处理模型。servlet是一个简单的网络IO模型，当请求进入servlet container时，servlet container就会为其绑定一个线程，在并发不高的场景下这种模型是适用的，但是一旦并发上升，线程数量就会上涨，严重影响请求的处理时间。
+    - 虽然Zuul 2.0开始使用了Netty，并且有了大规模Zuul 2.0集群部署的成熟案例。但是，SpringCloud官方已经没有集成该版本的计划了。
+  - 而SpringCloudGateway则是基于Spring5中提供的WebFlux，属于响应式编程的实现，底层使用的是Netty，Netty是目前业界认可的高性能的通信框架，具备更好的性能。
+
+- **Gateway中的核心概念**；
+
+  - **Route(路由)**：路由是构建网关的基本模块，它由ID，目标URI，一系列的断言和过滤器组成，如果断言为true则匹配该路由，目标URI会被访问。
+  - **Predicate(断言)**：断言用来匹配来自http请求的任何内容，如：请求头和请求参数。断言的类型是一个ServerWebExchange。
+  - **Filter(过滤器)**：指的是Spring框架中GatewayFilter的实例，使用过滤器，可以在请求被路由前后对请求进行修改。
+
+- **搭建网关服务**
+
+  - 创建新的module，引入SpringCloudGateway的依赖和nacos的服务发现依赖
+
+    ```xml
+     <!--网关依赖--> 
+    <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-starter-gateway</artifactId> 
+    </dependency>
+    <!--nacos服务发现依赖-->
+    <dependency>
+        <groupId>com.alibaba.cloud</groupId>
+        <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId> 
+    </dependency>
+    ```
+
+  - 编写路由配置及nacos地址
+
+    ```yml
+    server:
+    	port: 10010 # 网关端口
+    spring: 
+    	application:
+    		name: gateway # 服务名称 
+    	cloud:
+    		nacos:
+    			server-addr: localhost:8848 # nacos地址
+    		gateway:
+    			routes: # 网关路由配置
+    				- id: user-service # 路由id，自定义，只要唯一即可
+    					# uri: http://127.0.0.1:8081 # 路由的目标地址 http就是固定地址
+    					uri: lb://userservice # 路由的目标地址 lb指负载均衡，后面跟服务名称 
+    					predicates: # 路由断言，也就是判断请求是否符合路由规则的条件
+    						- Path=/user/** # Path表示按照路径匹配，只要以/user/开头就符合要求
+    					filters: # 过滤器
+    						- AddRequestHeader=X-Request-red, blue # 添加请求头
+    						- SaveSession # 保存session
+    			default-filters: # 默认过滤器，会对所有的路由请求都生效
+    				- RedirectTo=302, https://acme.org
+    ```
+
+- Gateway中的**路由断言**：
+
+  - 在配置文件中写的断言规则只是字符串，这些字符串会被**路由断言工厂Route Predicate Factory**读取并处理，转变为路由判断的条件。
+
+  - SpringCloudGateway中的11种断言工厂：https://docs.spring.io/spring-cloud-gateway/docs/current/reference/html/#gateway-request-predicates-factories
+
+    <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/springCloud-gateway-predicate.png" style="zoom:50%;" />
+
+- Gateway中的**过滤器**：
+
+  - GatewayFilter是网关中提供的一种过滤器，可以对进入网关的请求和微服务返回的响应做处理。Gateway中提供31种过滤器。
+
+    >AddRequestHeader 给当前请求添加一个请求头
+    >
+    >RemoveRequestHeader 移除请求中的一个请求头
+    >
+    >AddResponseHeader 给响应结果中添加一个响应头
+    >
+    >RequestRateLimiter  限制请求的流量
+    >
+    >SaveSession 保存session
+    >
+    >RedirectTo 重定向
+
+  - **默认过滤器**：作用是设置统一的过滤器，会对该服务所有的路由请求都生效
+
+    - 设置的位置与routes平级
+
+  - **全局过滤器** ：全局过滤器的作用也是处理一切进入网关的请求和微服务响应，与GatewayFilter的作用一样。 区别在于GatewayFilter通过配置定义，处理逻辑是固定的。而GlobalFilter的逻辑可以自己写代码实现。 定义方式是实现GlobalFilter接口。
+
+    ```java
+    @Order(-1)
+    @Component
+    public class AuthorizeFilter implements GlobalFilter {
+    		@Override
+    		public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) { 
+          	// 1.获取请求参数
+    				MultiValueMap<String, String> params = exchange.getRequest().getQueryParams();
+    				// 2.获取authorization参数
+    				String auth = params.getFirst("authorization");
+    				// 3.校验
+            if ("authorizationCode".equals(auth)) {
+            		// 放行
+            		return chain.filter(exchange);
+            }
+            // 4.拦截
+            // 4.1.禁止访问
+    				exchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN); 
+          	// 4.2.结束处理
+          	return exchange.getResponse().setComplete();
+    		} 
+    }
+    ```
+
+  - 过滤器的优先级：
+
+    - 请求进入网关会碰到三类过滤器:当前路由的GatewayFilter、DefaultFilter、GlobalFilter。请求路由后，会将当前路由过滤器和DefaultFilter、GlobalFilter，合并到一个过滤器链中，排序后依次执行每个过滤器
+
+      <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/springCloud-gateway-filter.png" style="zoom:50%;" />
+
+    - 每一个过滤器都必须指定一个int类型的order值，**order值越小，优先级越高，执行顺序越靠前**
+
+      - GlobalFilter通过实现Ordered接口，或者添加@Order注解来指定order值
+      - 路由过滤器和defaultFilter的order由Spring指定，默认是按照声明顺序从1递增
+      - 当过滤器的order值一样时，会按照 defaultFilter > 路由过滤器 > GlobalFilter的顺序执行。
+
+
+
+### Http客户端--Feign
+
+- **What?**  Feign是一个声明式的http客户端，其作用就是帮助我们优雅的实现http请求的发送，实现服务间的远程调用。Spring Cloud OpenFeign是基于Netflix feign实现，整合了Spring Cloud Ribbon和Spring Cloud Hystrix。Spring Cloud还对Feign进行了增强，使Feign支持了Spring MVC注解，并整合了Ribbon和Eureka，从而让Feign的使用更加方便。
+
+- **如何使用Feign**：
+
+  - 引入依赖：
+
+    ```xml
+     <dependency> 
+       <groupId>org.springframework.cloud</groupId> 
+       <artifactId>spring-cloud-starter-openfeign</artifactId>
+    </dependency>
+    ```
+
+  - 在消费者启动类中添加注解开启Feign的功能，
+
+    ```java
+    @EnableFeignClients
+    @SpringbootApplication
+    public class OrderApplication {
+      	public static void main(String[] args) {
+          	SpringApplication.run(OrderApplication.class, args)
+        }
+    }
+    ```
+
+  - 编写Feign客户端,基于SpringMVC的注解来声明远程调用的信息
+
+    ```java
+    @FeignClient("userservice")
+    public interface UserClient {
+        @RequestMapping(method = RequestMethod.GET, value = "/users")
+        List<User> getUsers();
+    
+        @RequestMapping(method = RequestMethod.GET, value = "/users/{userId}")
+        User findById(@PathVariable("userId") Long userId);
+    }
+    // 服务名称:userservice；请求方式:GET；请求路径:/user/{id}；请求参数:Long id；返回值类型:User
+    ```
+
+  - Orderservice远程调用userservice
+
+    ```java
+    @Autowired
+    private  Userclient userClient;
+    
+    public Order queryOrder(Long orderID) {
+      	Order order = orderMapper.findByID(orderID);
+      	// 远程调用userservice
+      	User user =  userClient.findById(order.getUserID);
+      	// 将user的内容封装到order中去
+      	order.setUser(user);
+      	return order;
+    }
+    ```
+
+- **自定义Feign日志**：**feign.Logger.Level**包含四种层级NONE、BASIC、HEADERS、FULL
+
+  - 方式一：配置文件配置
+
+    ```yaml
+    feign: 
+    	client:
+    		config:
+    			default: # 用default就是全局配置，
+    				loggerLevel: FULL # 日志级别
+    				
+    feign: 
+    	client:
+    		config:
+    			userservice: # 写服务名称，则是针对某个微服务的配置
+    				loggerLevel: FULL # 日志级别
+    ```
+
+  - 方式二：java代码配置
+
+    ```java
+    public class FeignClientConfiguration { 
+      	@Bean
+    		public Logger.Level feignLogLevel(){
+    				return Logger.Level.BASIC; 
+        }
+    }
+    // 然后在启动类中的@EnableFeignClients添加参数：全局配置、局部配置分别如下
+    // @EnableFeignClients(defaultConfiguration = FeignClientConfiguration.class) 
+    // @FeignClient(value = "userservice", configuration = FeignClientConfiguration.class) 
+    ```
+
+    
 
