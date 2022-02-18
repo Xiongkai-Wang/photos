@@ -525,7 +525,7 @@
 
 ### Http客户端--Feign
 
-- **What?**  Feign是一个声明式的http客户端，其作用就是帮助我们优雅的实现http请求的发送，实现服务间的远程调用。Spring Cloud OpenFeign是基于Netflix feign实现，整合了Spring Cloud Ribbon和Spring Cloud Hystrix。Spring Cloud还对Feign进行了增强，使Feign支持了Spring MVC注解，并整合了Ribbon和Eureka，从而让Feign的使用更加方便。
+- **What?**  Feign是一个声明式的http客户端，其作用就是帮助我们优雅的实现http请求的发送，实现服务间的远程调用。Spring Cloud OpenFeign是基于Netflix feign实现，整合了Spring Cloud Ribbon和Spring Cloud Hystrix。Spring Cloud还对Feign进行了增强，使Feign支持了Spring MVC注解，从而让Feign的使用更加方便。
 
 - **如何使用Feign**：
 
