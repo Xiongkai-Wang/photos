@@ -525,7 +525,7 @@
 
 ### Http客户端--Feign
 
-- **What?**  Feign是一个声明式的http客户端，其作用就是帮助我们优雅的实现http请求的发送，实现服务间的远程调用。Spring Cloud OpenFeign是基于Netflix feign实现，整合了Spring Cloud Ribbon和Spring Cloud Hystrix。Spring Cloud还对Feign进行了增强，使Feign支持了Spring MVC注解，从而让Feign的使用更加方便。
+- **What?**  Feign是一个声明式的http客户端，其作用就是帮助我们优雅的实现http请求的发送，实现服务间的远程调用。Spring Cloud OpenFeign是基于Netflix feign实现，整合了Spring Cloud Ribbon和Spring Cloud Hystrix。Spring Cloud还对Feign进行了增强，使Feign支持了Spring MVC注解，并整合了Ribbon和Eureka，从而让Feign的使用更加方便。
 
 - **如何使用Feign**：
 
@@ -609,8 +609,217 @@
     }
     // 然后在启动类中的@EnableFeignClients添加参数：全局配置、局部配置分别如下
     // @EnableFeignClients(defaultConfiguration = FeignClientConfiguration.class) 
-    // @FeignClient(value = "userservice", configuration = FeignClientConfiguration.class) 
+    // @EnableFeignClient(value = "userservice", configuration = FeignClientConfiguration.class) 
     ```
 
+
+
+
+
+
+
+
+### 微服务保护--Sentinel
+
+- **What?** 随着微服务的流行，服务和服务之间的稳定性变得越来越重要。Sentinel 是阿里巴巴开源的面向分布式服务架构的流量控制组件，主要以流量为切入点，从流量控制、熔断降级等多个维度来帮助您保障微服务的稳定性。
+
+- **雪崩问题**：微服务调用链路中的某个服务故障，引起整个链路中的所有微服务都不可用，这就是雪崩。在微服务架构中，一个业务往往需要调用多个微服务去完成，如果突然该服务链路上的某个服务因为故障或者高流量并发阻塞不可用，整个链路阻塞，甚至需要调用该链路服务的其他链路也会阻塞，导致系统整体不可用。
+
+  <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/springCloud-sentinel-snow.png" style="zoom:33%;" />
+
+  - 解决雪崩问题的方法：
+    - **超时处理**: 设定超时时间，请求超过一定时间没有响应就返回错误信息，不会无休止等待
+    - **线程隔离**：限定每个业务能使用的线程数，避免耗尽整个容器的资源
+    - **熔断降级**: 由断路器统计业务执行的异常比例，如果超出阈值则会熔断该业务，拦截访问该业务的一切请求。
+    - **流量控制**: 限制业务访问的QPS，避免服务因流量的突增而故障。
+
+- Sentinel分为两个部分：
+
+  - **核心库**（Java 客户端）不依赖任何框架/库，能够运行于所有 Java 运行时环境，同时对 Dubbo / Spring Cloud 等框架也有较好的支持。引入依赖即可
+
+  - **控制台**（Dashboard）基于 Spring Boot 开发，打包后可以直接运行，不需要额外的 Tomcat 等应用容器。
+
+  - 安装Sentinel控制台：
+
+    ```shell
+    # 1-官方下载jar包：https://github.com/alibaba/Sentinel/releases
     
+    # 2-直接运行jar包
+    java -Dserver.port=8080 -Dsentinel.dashboard.auth.username=sentinel -Dsentinel.dashboard.auth.password=123456 -jar sentinel-dashboard.jar
+    # 参数：控制台接口、控制台用户名和密码
+    ```
+
+- 微服务整合Sentinel：
+
+  - 在某个服务中引入sentinel依赖
+
+    ```xml
+    <dependency>
+    	<groupId>com.alibaba.cloud</groupId> 
+      <artifactId>spring-cloud-starter-alibaba-sentinel</artifactId>
+    </dependency>
+    ```
+
+  - 配置控制台地址:
+
+    ```yaml
+    spring: 
+    	cloud:
+    		sentinel: 
+    			transport:
+    				port: 8719
+    				dashboard: localhost:8080
+    ```
+
+- 核心概念：
+
+  - **簇点链路**：就是项目内的调用链路，链路中被监控的每个接口就是一个资源。默认情况下sentinel会监控SpringMVC 的每一个端点(Endpoint)，即Controller中的映射方法。如果要标记其它方法，需要利用@SentinelResource注解；同时需要添加如下配置
+
+    ```yaml
+    spring: 
+    	cloud:
+    		sentinel:
+    			web-context-unify: false 
+    ```
+
+  - **QPS**：Queries  Per Second 每秒查询率
+
+- **Sentinel限流规则**:
+
+  - **What？**通过限制访问该服务资源的流量来保护该资源的状态
+
+  - **三种流控模式**：
+
+    - **直接**：统计当前资源的请求，触发阈值时对当前资源直接限流，也是默认的模式
+
+    - **关联**：统计与当前资源相关的另一个资源，触发阈值时，对当前资源限流
+
+      - 需要满足两个条件：两个有竞争关系的资源；一个优先级较高，一个优先级较低
+      - 比如用户支付时需要修改订单状态，同时用户要查询订单。查询和修改操作会争抢数据库锁，产生竞争。业务需求是优先支付和更新订单的业务，因此当修改订单业务触发阈值时，需要对查询订单业务限流。
+
+    - **链路**：统计从指定链路访问到本资源的请求，触发阈值时，对指定链路限流。是对请求来源的限流
+
+      - 比如有查询订单和创建订单业务，两者都需要查询商品。针对从查询订单进入到查询商品的请求统 计，并设置限流。
+
+        <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/springCloud-sentinel-query.png" style="zoom:50%;" />
+
+  - **流控效果**：
+
+    - 快速失败: 达到阈值后，新的请求会被立即拒绝并抛出FlowException异常。是默认的处理方式。
+    - warm up: 预热模式，对超出阈值的请求同样是拒绝并抛出异常。但这种模式阈值会动态变化，从一个较小值逐渐增加到最大阈值。
+      - 是应对服务冷启动的一种方案。请求阈值初始值是 threshold / coldFactor，持续指定时长后， 逐渐提高到threshold值。而coldFactor的默认值是3。
+    - 排队等待: 当请求超过QPS阈值时，快速失败和warm up 会拒绝新的请求并抛出异常。而排队等待则是让所有请求进入一个队列中 ，然后按照阈值允许的时间间隔依次执行。后来的请求必须等待前面执行完成，如果请求预期的等待时间超出最大时 长，则会被拒绝。
+
+  - **热点参数限流**：之前的限流是统计访问某个资源的所有请求，判断是否超过QPS阈值。而热点参数限流是分别统计参数值相同的请求， 判断是否超过QPS阈值。
+
+    - 对某个这个资源的索引参数做统计，每一统计窗口时长相同参数值的请求数不能超过 threshold
+
+      <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/springCloud-sentinel-hot.png" style="zoom:50%;" />
+
+- **Feign整合Sentinel**: 微服务调用都是通过Feign来实现的，必须整合Feign和Sentinel。
+
+  - 开启Feign的Sentinel功能
+
+    ```yaml
+    feign: 
+    	sentinel:
+    		enabled: true # 开启Feign的Sentinel功能
+    ```
+
+  - 给FeignClient编写调用失败后的降级逻辑：定义类，实现FallbackFactory接口
+
+    ```java
+    // 指定要返回的远程调用接口
+    public class UserClientFallbackFactory implements FallbackFactory<UserClient> { 		
+      	@Override
+    		public UserClient create(Throwable throwable) {
+    			 // 创建远程调用接口UserClient的实现类，实现其中的方法，编写失败降级的处理逻辑
+          return new UserClient() { 
+            	@Override
+    					 public User findById(Long id) { // 记录异常信息
+    									log.error("查询用户失败", throwable); 
+                 		 // 根据业务需求返回默认的数据，这里是空用户
+    									return new User(); }
+          }; 
+        }
+    }
+    ```
+
+  - 将UserClientFallbackFactory注册为一个Bean并在UserClient接口中使用UserClientFallbackFactory
+
+    ```java
+    @Bean
+    public UserClientFallbackFactory userClientFallback(){ 
+      	return new UserClientFallbackFactory();
+    }
+    
+    @FeignClient(value = "userservice", fallbackFactory = UserClientFallbackFactory.class) 
+    public interface UserClient {
+    		@GetMapping("/user/{id}")
+    		User findById(@PathVariable("id") Long id); 
+    }
+    ```
+
+- **Sentinel线程隔离**
+
+  - **What**：通过限制自身的线程数量保护该资源的状态
+  - 实现方式：修改QPS为线程数
+
+- **Sentinel熔断降级**
+
+  - **What？**由断路器统计服务调用的异常比例、慢请求比例，如果超出阈值则会熔断该服务。即拦截访问该服务的一切请求；而当服务恢复时，断路器会放行访问该服务的请求。
+
+    <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/springCloud-sentinel-circuit.png" style="zoom:50%;" />
+
+  - 断路器熔断三种策略策略：
+
+    - 慢调用比例：业务的响应时长大于指定时长（最大RT）的请求认定为慢调用请求。在指定时间（统计时长）内，如果请求数量超过设定的最小数量（最小请求数），且慢调用比例大于设定的*比例阈值*，则触发熔断，熔断设置的时长。
+
+    - 异常比例和异常数：在指定时间（统计时长）内，如果请求数量超过设定的最小数量（最小请求数），且出现异常比例大于设定的*比例阈值*（或者出现异常的请求数超过设定的数值），则触发熔断，熔断设置的时长。
+
+      ![](https://github.com/Xiongkai-Wang/photos/blob/main/springCloud-sentinel-circuit-breaker.png)
+
+      
+
+- **Sentinel授权规则**：
+
+  - **What?** 授权规则可以对调用方的来源做控制，有白名单和黑名单两种方式。
+
+    - 白名单:来源(origin)在白名单内的调用者允许访问
+    - 黑名单:来源(origin)在黑名单内的调用者不允许访问
+
+  - 实现方式：
+
+    - Sentinel通过RequestOriginParser接口的parseOrigin方法来获取请求的来源
+
+      ```java
+      // 例如从request中获取一个名为origin的请求头，作为origin的值
+      @Component
+      public class HeaderOriginParser implements RequestOriginParser { 
+        	@Override
+      		public String parseOrigin(HttpServletRequest request) { 
+            	String origin = request.getHeader("origin"); 	
+            	if(StringUtils.isEmpty(origin)){
+                return "blank"; 
+              }
+            return origin; 
+          }
+      }
+      ```
+
+    - 在gateway服务中，利用网关的过滤器添加名为gateway的origin头
+
+      ```yaml
+      spring: 
+      	cloud:
+      		gateway: 
+      			default-filters:
+      				- AddRequestHeader=origin,gateway # 添加名为origin的请求头，值为gateway
+      ```
+
+      - 这样从gateway发出的请求都会有origin的值为gateway的头信息
+
+    - 给资源配置授权规则: 请求的来源指定为gateway。这样就只允许从网关来的请求访问该资源
+
+      <img src="https://raw.githubusercontent.com/Xiongkai-Wang/photos/main/springCloud-sentinel-auth.png" style="zoom:50%;" />
 
